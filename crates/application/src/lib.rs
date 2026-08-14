@@ -5,6 +5,7 @@
 
 pub mod agent;
 pub mod auth;
+pub mod paper;
 pub mod quiz;
 pub mod space;
 pub mod wrong;
