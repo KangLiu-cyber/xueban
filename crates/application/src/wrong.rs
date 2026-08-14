@@ -2,15 +2,25 @@
 //!
 //! 错题由刷题/模考答错自动归集；重做只针对单题，不产生新的刷题会话；
 //! 重做答对不自动清除错题，掌握只能由用户显式标记。
+//! 列表对外以 `WrongListItem` 返回（错题记录 + 题目简述），客户端直接渲染题干。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::Utc;
 use domain::error::{Error, Result};
 use domain::ports::{QuestionRepository, WrongItemRepository};
 use domain::practice::WrongItem;
+use serde::{Deserialize, Serialize};
 
 use crate::quiz::QuestionBrief;
+
+/// 错题列表项：错题记录 + 题目简述（不含答案与解析）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WrongListItem {
+    pub wrong: WrongItem,
+    pub question: QuestionBrief,
+}
 
 pub struct WrongService<B, Q>
 where
@@ -30,9 +40,25 @@ where
         Self { wrongs, questions }
     }
 
-    /// ListWrong：未掌握错题列表。
-    pub async fn list(&self, user_id: i64) -> Result<Vec<WrongItem>> {
-        self.wrongs.list_unmastered(user_id).await
+    /// ListWrong：未掌握错题列表（按更新时间升序，带题目简述）。
+    pub async fn list(&self, user_id: i64) -> Result<Vec<WrongListItem>> {
+        let wrongs = self.wrongs.list_unmastered(user_id).await?;
+        let ids: Vec<i64> = wrongs.iter().map(|w| w.question_id).collect();
+        let questions = self.questions.find_by_ids(&ids, user_id).await?;
+        let by_id: HashMap<i64, QuestionBrief> = questions
+            .into_iter()
+            .map(|q| (q.id, QuestionBrief::from(q)))
+            .collect();
+        // 题目已删除的错题记录不展示（保留库中记录，掌握状态不受影响）。
+        Ok(wrongs
+            .into_iter()
+            .filter_map(|wrong| {
+                by_id
+                    .get(&wrong.question_id)
+                    .cloned()
+                    .map(|question| WrongListItem { wrong, question })
+            })
+            .collect())
     }
 
     /// RedoWrong：重做单道错题，返回题目视图（不含答案与解析）。
@@ -95,9 +121,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_returns_only_unmastered() {
+    async fn list_returns_only_unmastered_with_question_brief() {
         let (s, qid) = svc().await;
-        assert_eq!(s.list(1).await.unwrap().len(), 1);
+        let list = s.list(1).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].wrong.question_id, qid);
+        assert_eq!(list[0].question.stem, "1+1=?");
+        // 简述不含答案。
+        assert!(
+            serde_json::to_value(&list[0].question)
+                .unwrap()
+                .get("answer")
+                .is_none()
+        );
         s.mark_mastered(1, qid).await.unwrap();
         assert!(s.list(1).await.unwrap().is_empty());
     }
