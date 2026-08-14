@@ -1,0 +1,2267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>超级学习助手 · 桌面端原型 v3（柔和版）</title>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --accent: #5B5FC7;
+  --accent-deep: #4A4EB0;
+  --accent-light: #EEEEFA;
+  --bg: #F7F5F0;
+  --surface: #FFFFFF;
+  --surface-2: #FBFAF6;
+  --ink: #35322C;
+  --muted: #8A8477;
+  --muted-light: #B3AC9E;
+  --border: #E9E4D9;
+  --border-light: #F1EDE3;
+  --green: #3E9B6E;
+  --green-light: #EAF5EF;
+  --red: #D25B4E;
+  --red-light: #FBEDEA;
+  --gold: #C2932A;
+  --gold-light: #F9F2DF;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 3px rgba(80,70,50,.05), 0 4px 14px rgba(80,70,50,.05);
+  --shadow-md: 0 6px 24px rgba(80,70,50,.10);
+  --sidebar-w: 264px;
+  --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+}
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.65;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app { display: flex; height: 100vh; }
+
+/* ========== Sidebar ========== */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-header { padding: 22px 20px 16px; }
+
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon {
+  width: 36px; height: 36px;
+  background: var(--accent);
+  border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-family: var(--serif); font-size: 18px; font-weight: 700;
+}
+.logo-name { font-family: var(--serif); font-size: 17px; font-weight: 700; }
+.logo-sub { font-size: 11px; color: var(--muted-light); }
+
+.workspace-selector {
+  margin-top: 14px;
+  padding: 9px 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer;
+  transition: all .15s;
+}
+.workspace-selector:hover { border-color: var(--accent); }
+.workspace-selector .ws-name { font-weight: 600; }
+.workspace-selector .ws-badge {
+  background: var(--green-light); color: var(--green);
+  padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600;
+}
+
+.sidebar-nav { flex: 1; padding: 10px 12px; overflow-y: auto; }
+
+.nav-section { margin-bottom: 10px; }
+.nav-section-title {
+  font-size: 12px; font-weight: 600; color: var(--muted-light);
+  padding: 10px 12px 5px;
+}
+
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer; transition: all .15s;
+  color: var(--ink); font-weight: 500; font-size: 13.5px;
+}
+.nav-item:hover { background: var(--surface-2); }
+.nav-item.active { background: var(--accent-light); color: var(--accent-deep); }
+.nav-item .icon { width: 18px; text-align: center; font-size: 15px; }
+.nav-item .count {
+  margin-left: auto; font-size: 11px; color: var(--muted-light);
+  background: var(--surface-2); padding: 1px 8px; border-radius: 8px;
+}
+.nav-item.active .count { background: #fff; color: var(--accent); }
+
+.tree-folder {
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 12px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; border-radius: var(--radius-sm);
+}
+.tree-folder:hover { background: var(--surface-2); }
+.tree-folder .folder-caret { font-size: 10px; color: var(--muted-light); display: inline-block; transition: transform .18s; }
+.tree-folder.collapsed .folder-caret { transform: rotate(-90deg); }
+.tree-folder .folder-count { margin-left: auto; font-size: 11px; color: var(--muted-light); font-weight: 400; }
+.tree-children { margin-left: 10px; border-left: 1px solid var(--border-light); padding-left: 6px; }
+
+.tree-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 10px;
+  font-size: 13px; color: var(--muted);
+  cursor: pointer; border-radius: 8px; transition: all .15s;
+}
+.tree-item:hover { background: var(--surface-2); color: var(--ink); }
+.tree-item.active { color: var(--accent-deep); font-weight: 600; background: var(--accent-light); }
+.tree-item .tree-icon { font-size: 13px; opacity: .7; }
+
+.sidebar-footer {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border-light);
+  display: flex; align-items: center; gap: 10px;
+}
+.avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(135deg, #8C7B6B, #6B5D4F);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 13px; font-weight: 600;
+}
+.user-name { font-size: 13px; font-weight: 600; }
+.user-plan { font-size: 11px; color: var(--muted-light); }
+
+/* ========== Main ========== */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  height: 60px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 26px; gap: 16px;
+  flex-shrink: 0;
+}
+.topbar-title { font-family: var(--serif); font-size: 17px; font-weight: 700; }
+.topbar-sub { font-size: 12.5px; color: var(--muted); }
+.topbar-spacer { flex: 1; }
+
+.btn {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--sans);
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-deep); }
+.btn-ghost { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent-deep); }
+.btn-sm { padding: 5px 12px; font-size: 12.5px; }
+
+.content-area { flex: 1; overflow-y: auto; }
+
+.view { display: none; }
+.view.active { display: block; animation: fade .25s ease; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ========== Searchable dropdown (generic) ========== */
+.dd { position: relative; }
+.dd-current {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); font-size: 13.5px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.dd-current:hover { border-color: var(--accent); }
+.dd-caret { color: var(--muted-light); font-size: 11px; }
+.dd-panel {
+  display: none; position: absolute; top: calc(100% + 6px); left: 0;
+  width: 320px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-md); z-index: 100; overflow: hidden;
+}
+.dd.open .dd-panel { display: block; }
+.dd-search {
+  width: calc(100% - 20px); margin: 10px 10px 6px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; outline: none; font-family: var(--sans);
+}
+.dd-search:focus { border-color: var(--accent); }
+.dd-list { max-height: 260px; overflow-y: auto; padding: 4px 6px 8px; }
+.dd-group { font-size: 11.5px; font-weight: 600; color: var(--muted-light); padding: 10px 10px 4px; }
+.dd-item {
+  padding: 8px 10px; border-radius: 8px; font-size: 13px;
+  cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.dd-item:hover { background: var(--surface-2); }
+.dd-item.active { background: var(--accent-light); color: var(--accent-deep); font-weight: 600; }
+.dd-item .di-meta { font-size: 11px; color: var(--muted-light); white-space: nowrap; }
+.dd-item .di-meta.done { color: var(--green); font-weight: 600; }
+
+/* ========== Notes ========== */
+.notes-view { padding: 30px 48px 60px; max-width: 860px; margin: 0 auto; }
+
+.episode-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.ep-btn {
+  padding: 6px 13px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface); font-size: 12.5px; font-weight: 600; color: var(--muted);
+  cursor: pointer; transition: all .15s;
+}
+.ep-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
+.episode-bar .dd { flex: 1; max-width: 380px; }
+.ep-progress { font-size: 12.5px; color: var(--muted); margin-left: auto; }
+
+.note-tabs { display: flex; gap: 4px; border-bottom: 1.5px solid var(--border); margin-bottom: 26px; }
+.note-tab {
+  padding: 9px 20px; font-size: 14px; font-weight: 600; color: var(--muted);
+  cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1.5px; transition: all .15s;
+}
+.note-tab:hover { color: var(--ink); }
+.note-tab.active { color: var(--accent-deep); border-bottom-color: var(--accent); }
+.note-tab .tab-count { font-size: 11px; background: var(--surface-2); padding: 1px 8px; border-radius: 8px; margin-left: 6px; }
+.note-tab.active .tab-count { background: var(--accent-light); color: var(--accent); }
+
+.note-header { margin-bottom: 26px; }
+.note-meta { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.note-meta .tag { background: var(--accent-light); color: var(--accent-deep); padding: 2px 11px; border-radius: 10px; font-weight: 600; }
+.note-title { font-family: var(--serif); font-size: 27px; font-weight: 700; line-height: 1.35; }
+
+.note-section { margin-bottom: 30px; }
+.note-section h2 {
+  font-family: var(--serif); font-size: 19px; font-weight: 700;
+  margin-bottom: 12px; padding-left: 12px; border-left: 4px solid var(--accent);
+  border-radius: 2px;
+}
+.note-section h3 { font-size: 15px; font-weight: 700; margin: 18px 0 8px; }
+
+.note-body { font-size: 14.5px; line-height: 1.85; color: var(--ink); }
+.note-body p { margin-bottom: 8px; }
+
+.star-marker { color: var(--gold); font-weight: 700; margin-right: 4px; }
+
+.annotation-highlight {
+  background: linear-gradient(transparent 55%, var(--gold-light) 55%);
+  cursor: pointer; padding: 1px 2px; border-radius: 2px;
+  position: relative; font-weight: 600;
+}
+.annotation-popup {
+  display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 8px;
+  background: var(--ink); color: #F7F5F0;
+  padding: 8px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 400;
+  white-space: nowrap; z-index: 100; box-shadow: var(--shadow-md);
+}
+.annotation-highlight:hover .annotation-popup { display: block; }
+
+.exam-tip {
+  background: var(--surface-2);
+  border-left: 4px solid var(--gold);
+  border-radius: 0 10px 10px 0;
+  padding: 13px 16px; margin: 12px 0;
+  font-size: 13.5px; color: var(--muted);
+}
+.exam-tip b { color: var(--ink); }
+
+.note-actions { display: flex; gap: 8px; margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-light); }
+
+table.cheat { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0; }
+table.cheat th { text-align: left; padding: 9px 12px; background: var(--surface-2); font-weight: 700; border-bottom: 2px solid var(--border); }
+table.cheat td { padding: 9px 12px; border-bottom: 1px solid var(--border-light); color: var(--muted); }
+table.cheat td:first-child { font-weight: 600; color: var(--ink); }
+
+/* ========== Quiz ========== */
+.quiz-view { padding: 30px 48px 60px; max-width: 780px; margin: 0 auto; }
+
+.quiz-scope {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px; padding: 12px 16px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.scope-label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.scope-hint { font-size: 12.5px; color: var(--muted); margin-left: auto; }
+.quiz-scope .dd { min-width: 260px; }
+
+.quiz-progress-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.progress-track { flex: 1; height: 7px; background: var(--border-light); border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width .3s; }
+.progress-text { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+.quiz-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 30px 32px;
+  box-shadow: var(--shadow);
+}
+
+.quiz-tag-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.quiz-tag { font-size: 11.5px; padding: 2px 10px; border-radius: 10px; font-weight: 600; }
+.quiz-tag.star { background: var(--gold-light); color: var(--gold); }
+.quiz-tag.subject { background: var(--accent-light); color: var(--accent-deep); }
+.quiz-tag.type { background: var(--surface-2); color: var(--muted); }
+
+.quiz-question { font-size: 16px; font-weight: 600; line-height: 1.65; margin-bottom: 18px; }
+
+.quiz-options { display: flex; flex-direction: column; gap: 9px; }
+.quiz-option {
+  display: flex; align-items: center; gap: 11px;
+  padding: 13px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer; transition: all .15s;
+  font-size: 14px;
+}
+.quiz-option:hover { border-color: var(--accent); background: var(--accent-light); }
+.quiz-option .opt-label {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  background: var(--surface-2); color: var(--muted); flex-shrink: 0;
+}
+.quiz-option.correct { border-color: var(--green); background: var(--green-light); }
+.quiz-option.correct .opt-label { background: var(--green); color: #fff; }
+.quiz-option.wrong { border-color: var(--red); background: var(--red-light); }
+.quiz-option.wrong .opt-label { background: var(--red); color: #fff; }
+.quiz-option.disabled { pointer-events: none; opacity: .72; }
+.quiz-option.disabled.correct { opacity: 1; }
+
+.quiz-explanation {
+  margin-top: 18px; padding: 16px 18px;
+  background: var(--surface-2);
+  border-radius: 12px; border-left: 4px solid var(--green);
+  font-size: 13.5px; line-height: 1.75;
+  display: none;
+}
+.quiz-explanation.show { display: block; animation: fade .25s ease; }
+.quiz-explanation .exp-label { font-weight: 700; margin-bottom: 4px; color: var(--green); font-size: 13px; }
+.quiz-explanation .exp-src { font-size: 12px; color: var(--muted-light); margin-top: 8px; }
+
+.quiz-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+
+/* ========== Wrong ========== */
+.wrong-view { padding: 26px 34px 60px; max-width: 900px; margin: 0 auto; }
+
+.wrong-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 16px; flex-wrap: wrap; }
+.wrong-stats { display: flex; gap: 12px; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 24px; text-align: center; min-width: 110px;
+}
+.stat-card .stat-num { font-family: var(--serif); font-size: 26px; font-weight: 700; }
+.stat-card .stat-label { font-size: 12px; color: var(--muted); }
+.stat-card.danger .stat-num { color: var(--red); }
+.stat-card.warning .stat-num { color: var(--gold); }
+.stat-card.ok .stat-num { color: var(--green); }
+
+.wrong-list { display: flex; flex-direction: column; gap: 9px; }
+.wrong-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 15px 18px;
+  display: flex; align-items: center; gap: 13px;
+  transition: all .15s; cursor: pointer;
+}
+.wrong-item:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.wrong-item .wrong-icon {
+  width: 38px; height: 38px;
+  background: var(--red-light); color: var(--red);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.wrong-item .wrong-content { flex: 1; min-width: 0; }
+.wrong-item .wrong-question { font-size: 14px; font-weight: 600; }
+.wrong-item .wrong-meta { font-size: 12px; color: var(--muted); display: flex; gap: 10px; margin-top: 3px; }
+.wrong-item .wrong-count { background: var(--red-light); color: var(--red); padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+
+/* ========== Assembly ========== */
+.assembly-view { padding: 26px 34px 60px; max-width: 1060px; margin: 0 auto; }
+.assembly-layout { display: flex; gap: 20px; }
+.assembly-main { flex: 1; min-width: 0; }
+.assembly-cart {
+  width: 320px; flex-shrink: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 22px;
+  position: sticky; top: 0; height: fit-content;
+}
+
+.assembly-filters {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px;
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+}
+.assembly-filters .filter-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.filter-chip {
+  padding: 5px 14px; border-radius: 16px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  transition: all .15s;
+}
+.filter-chip:hover { border-color: var(--accent); }
+.filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.question-pool { display: flex; flex-direction: column; gap: 9px; }
+.pool-item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 15px 18px;
+  display: flex; align-items: flex-start; gap: 12px;
+  transition: all .15s;
+}
+.pool-item:hover { border-color: var(--accent); }
+.pool-item.added { border-color: var(--green); background: var(--green-light); }
+
+.pool-checkbox {
+  width: 21px; height: 21px;
+  border: 2px solid var(--border); border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; margin-top: 2px; transition: all .15s;
+}
+.pool-checkbox:hover { border-color: var(--accent); }
+.pool-checkbox.checked { background: var(--green); border-color: var(--green); color: #fff; }
+.pool-checkbox.checked::after { content: "✓"; font-size: 12px; font-weight: 700; }
+
+.pool-content { flex: 1; min-width: 0; }
+.pool-question { font-size: 14px; font-weight: 500; line-height: 1.55; margin-bottom: 7px; }
+.pool-meta { display: flex; gap: 7px; flex-wrap: wrap; }
+.pool-meta .meta-tag { font-size: 11px; padding: 1px 9px; border-radius: 8px; font-weight: 600; }
+.pool-meta .meta-tag.subject { background: var(--accent-light); color: var(--accent-deep); }
+.pool-meta .meta-tag.star { background: var(--gold-light); color: var(--gold); }
+.pool-meta .meta-tag.source { background: var(--surface-2); color: var(--muted); }
+.pool-meta .meta-tag.wrong { background: var(--red-light); color: var(--red); }
+
+.cart-title { font-family: var(--serif); font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.cart-progress { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+.cart-progress .filled { color: var(--accent-deep); font-weight: 700; font-size: 15px; }
+
+.cart-config { background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px 14px; margin: 14px 0; }
+.cart-config-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px; }
+.cart-config-row .label { color: var(--muted); }
+.cart-config-row .value { font-weight: 600; }
+
+.cart-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.cart-stat { text-align: center; padding: 9px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.cart-stat .num { font-family: var(--serif); font-size: 19px; font-weight: 700; }
+.cart-stat .lbl { font-size: 11px; color: var(--muted); }
+
+.cart-actions { display: flex; flex-direction: column; gap: 8px; }
+
+/* ========== Exam countdown ========== */
+.exam-countdown {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, var(--gold-light), #FDF9EE);
+  border: 1px solid #EFE2C2;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 13px;
+  cursor: pointer; transition: all .15s;
+}
+.exam-countdown:hover { border-color: var(--gold); }
+.cd-num { font-family: var(--serif); font-size: 30px; font-weight: 700; color: var(--gold); line-height: 1; }
+.cd-num .cd-unit { font-size: 12.5px; font-weight: 600; margin-left: 2px; }
+.cd-label { font-size: 12.5px; font-weight: 600; }
+.cd-date { font-size: 11px; color: var(--muted); }
+.cd-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 13px; border-radius: 999px;
+  background: var(--gold-light); color: var(--gold);
+  font-size: 12.5px; font-weight: 700; white-space: nowrap;
+}
+
+/* ========== Modal ========== */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(53,50,44,.42);
+  display: none; align-items: center; justify-content: center;
+  z-index: 200;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--surface); border-radius: 18px;
+  box-shadow: var(--shadow-md);
+  width: 620px; max-width: calc(100vw - 80px); max-height: calc(100vh - 90px);
+  display: flex; flex-direction: column;
+  animation: modalIn .22s cubic-bezier(.2,.8,.3,1);
+  overflow: hidden;
+}
+@keyframes modalIn { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+.modal-head { padding: 18px 24px 13px; border-bottom: 1px solid var(--border-light); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.modal-title { font-family: var(--serif); font-size: 17px; font-weight: 700; }
+.modal-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.modal-close { width: 30px; height: 30px; border-radius: 50%; border: none; background: var(--surface-2); color: var(--muted); font-size: 13px; cursor: pointer; transition: all .15s; flex-shrink: 0; }
+.modal-close:hover { background: var(--border-light); color: var(--ink); }
+.modal-body { padding: 20px 24px; overflow-y: auto; }
+.modal-foot { padding: 14px 24px 18px; border-top: 1px solid var(--border-light); display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+
+/* ========== Paper preview ========== */
+.pv-stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.pv-stat { background: var(--surface-2); border-radius: 9px; padding: 7px 13px; font-size: 12.5px; color: var(--muted); }
+.pv-stat b { color: var(--ink); font-family: var(--serif); font-size: 14.5px; margin-right: 4px; }
+.pv-row { display: flex; gap: 11px; align-items: flex-start; padding: 10px 2px; border-bottom: 1px solid var(--border-light); font-size: 13px; }
+.pv-num { width: 26px; height: 26px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.pv-q { flex: 1; line-height: 1.55; }
+.pv-tags { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
+.pv-more { padding: 12px 2px; font-size: 12px; color: var(--muted-light); }
+.pv-hint { margin-top: 10px; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; background: var(--gold-light); color: var(--gold); font-weight: 600; }
+.pv-hint.ok { background: var(--green-light); color: var(--green); }
+
+/* ========== Mock exam ========== */
+.mock-view { padding: 24px 34px 60px; max-width: 1080px; margin: 0 auto; }
+.mock-info-bar { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 18px; margin-bottom: 16px; }
+.mock-title { font-family: var(--serif); font-weight: 700; font-size: 15.5px; }
+.mock-meta { font-size: 12px; color: var(--muted); }
+.mock-timer { margin-left: auto; font-family: var(--serif); font-size: 19px; font-weight: 700; color: var(--gold); background: var(--gold-light); padding: 6px 16px; border-radius: 10px; white-space: nowrap; }
+.mock-layout { display: flex; gap: 18px; align-items: flex-start; }
+.mock-main { flex: 1; min-width: 0; }
+.mock-sheet { width: 252px; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; position: sticky; top: 0; }
+.sheet-title { font-family: var(--serif); font-size: 15px; font-weight: 700; }
+.sheet-legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); margin: 9px 0 10px; }
+.lg { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; }
+.lg-empty { border: 1px solid var(--border); background: var(--surface); }
+.lg-done { background: var(--accent); }
+.lg-cur { border: 1px solid var(--accent); background: var(--accent-light); }
+.sheet-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; margin-bottom: 12px; }
+.sheet-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--border); font-size: 12px; color: var(--muted); cursor: pointer; background: var(--surface); transition: all .12s; }
+.sheet-cell:hover { border-color: var(--accent); }
+.sheet-cell.answered { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.sheet-cell.current { border-color: var(--accent); box-shadow: 0 0 0 2.5px var(--accent-light); color: var(--accent-deep); font-weight: 700; }
+.sheet-cell.answered.current { color: #fff; }
+.sheet-stat { font-size: 12.5px; color: var(--muted); text-align: center; padding-top: 10px; border-top: 1px solid var(--border-light); }
+.quiz-option.selected { border-color: var(--accent); background: var(--accent-light); }
+.quiz-option.selected .opt-label { background: var(--accent); color: #fff; }
+
+/* ========== Mock result ========== */
+.result-score { font-family: var(--serif); font-size: 54px; font-weight: 700; color: var(--accent-deep); line-height: 1.1; }
+.result-score .res-unit { font-size: 17px; color: var(--muted); margin-left: 4px; font-weight: 600; }
+.result-sub { font-size: 12.5px; color: var(--muted); margin: 6px 0 16px; }
+.result-grid { display: flex; gap: 10px; }
+.result-grid > div { flex: 1; background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px; }
+.res-num { font-family: var(--serif); font-size: 22px; font-weight: 700; }
+.res-lbl { font-size: 11.5px; color: var(--muted); }
+.result-note { margin-top: 14px; font-size: 12px; color: var(--muted); background: var(--surface-2); padding: 8px 12px; border-radius: 8px; }
+
+/* ========== Wrong mastered ========== */
+.wrong-item.mastered { border-color: var(--green); background: var(--green-light); }
+.wrong-item.mastered .wrong-icon { background: var(--green); color: #fff; }
+.wrong-item.mastered .wrong-count { background: #fff; color: var(--green); }
+
+/* ========== Data source hint ========== */
+.src-hint {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+  background: var(--surface-2); border: 1px dashed var(--border);
+  padding: 7px 13px; border-radius: 9px; margin-bottom: 14px; line-height: 1.6;
+}
+
+/* ========== Login & Agent ========== */
+.form-row { margin-bottom: 14px; }
+.form-label { display: block; font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.form-input {
+  width: 100%; padding: 10px 13px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13.5px; font-family: var(--sans);
+  background: var(--surface); color: var(--ink); outline: none; transition: border-color .15s;
+}
+.form-input:focus { border-color: var(--accent); }
+.auth-link { color: var(--accent-deep); font-weight: 600; cursor: pointer; }
+.auth-link:hover { text-decoration: underline; }
+
+.user-menu {
+  display: none; position: absolute; bottom: calc(100% + 8px); left: 14px;
+  width: 212px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md); z-index: 120; padding: 5px;
+}
+.user-menu.show { display: block; animation: fade .18s ease; }
+.user-menu-item {
+  padding: 9px 12px; border-radius: 8px; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: background .12s;
+}
+.user-menu-item:hover { background: var(--surface-2); }
+.user-menu-item.danger { color: var(--red); }
+.user-menu-item.danger:hover { background: var(--red-light); }
+
+.agent-steps { display: flex; flex-direction: column; gap: 9px; margin-bottom: 16px; }
+.agent-step { display: flex; gap: 10px; font-size: 13px; color: var(--muted); align-items: flex-start; line-height: 1.6; }
+.agent-step b { color: var(--ink); }
+.step-no {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent-light); color: var(--accent-deep);
+  font-size: 11.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 2px;
+}
+.agent-config {
+  background: #2F2C26; color: #EDE9DF;
+  border-radius: 12px; padding: 14px 16px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px; line-height: 1.75;
+  white-space: pre-wrap; word-break: break-all;
+  user-select: all;
+}
+.agent-note {
+  margin-top: 12px; font-size: 12px; line-height: 1.7;
+  color: var(--gold); background: var(--gold-light);
+  padding: 9px 13px; border-radius: 9px;
+}
+
+/* ========== Annotation fab & mine ========== */
+.anno-fab {
+  position: fixed; z-index: 150; display: none;
+  background: var(--ink); color: #F7F5F0; border: none;
+  padding: 7px 15px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; font-family: var(--sans);
+  cursor: pointer; box-shadow: var(--shadow-md);
+  transform: translateX(-50%);
+  transition: background .15s;
+}
+.anno-fab:hover { background: #14120E; }
+.annotation-highlight.mine { background: linear-gradient(transparent 55%, var(--accent-light) 55%); }
+
+/* ========== Auth page (登录页) ========== */
+.auth-page {
+  position: fixed; inset: 0; z-index: 400;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.auth-deco { position: absolute; border-radius: 50%; filter: blur(72px); opacity: .6; pointer-events: none; }
+.auth-deco-1 { width: 440px; height: 440px; background: var(--accent-light); top: -130px; right: -90px; }
+.auth-deco-2 { width: 400px; height: 400px; background: var(--gold-light); bottom: -150px; left: -110px; }
+.auth-wrap { display: flex; gap: 72px; align-items: center; max-width: 1080px; padding: 40px; position: relative; }
+.auth-brand { flex: 1; min-width: 400px; }
+.auth-headline { font-family: var(--serif); font-size: 34px; font-weight: 700; line-height: 1.42; margin-bottom: 14px; }
+.auth-sub { font-size: 14px; color: var(--muted); line-height: 1.85; margin-bottom: 28px; }
+.auth-features { display: flex; flex-direction: column; gap: 13px; margin-bottom: 26px; }
+.auth-feature { display: flex; gap: 12px; align-items: flex-start; }
+.af-icon {
+  width: 38px; height: 38px; border-radius: 11px;
+  background: var(--surface); border: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; flex-shrink: 0; box-shadow: var(--shadow);
+}
+.auth-feature b { font-size: 13.5px; display: block; margin-bottom: 1px; }
+.auth-feature .af-desc { font-size: 12px; color: var(--muted); }
+.auth-flow {
+  display: inline-block; font-size: 12.5px; font-weight: 600;
+  color: var(--accent-deep); background: var(--accent-light);
+  padding: 7px 17px; border-radius: 999px;
+}
+.auth-card {
+  width: 400px; flex-shrink: 0;
+  background: var(--surface); border: 1px solid var(--border-light);
+  border-radius: 18px; box-shadow: var(--shadow-md);
+  padding: 30px 32px; position: relative;
+}
+.auth-tabs { display: flex; background: var(--surface-2); border-radius: 10px; padding: 4px; margin-bottom: 22px; }
+.auth-tab {
+  flex: 1; text-align: center; padding: 8px 0; border-radius: 8px;
+  font-size: 13.5px; font-weight: 600; color: var(--muted);
+  cursor: pointer; transition: all .15s;
+}
+.auth-tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.auth-agree { margin-top: 14px; font-size: 11.5px; color: var(--muted-light); text-align: center; line-height: 1.6; }
+.auth-steps { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 18px; }
+.a-step { padding: 3px 11px; border-radius: 999px; font-weight: 600; }
+.a-step.done { background: var(--green-light); color: var(--green); }
+.a-step.cur { background: var(--accent-light); color: var(--accent-deep); }
+.a-line { width: 18px; height: 1.5px; background: var(--border); }
+.auth-footer { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; font-size: 12px; color: var(--muted-light); }
+
+/* ========== Toast ========== */
+.toast {
+  position: fixed; left: 50%; bottom: 34px;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--ink); color: #F7F5F0;
+  padding: 12px 22px; border-radius: 999px;
+  font-size: 13.5px; font-weight: 500;
+  box-shadow: var(--shadow-md);
+  opacity: 0; pointer-events: none; transition: all .28s cubic-bezier(.2,.8,.3,1);
+  z-index: 300;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
+
+@media print {
+  .sidebar, .topbar, .note-actions, .episode-bar, .note-tabs { display: none; }
+  .content-area { overflow: visible; }
+  .notes-view { max-width: 100%; padding: 0; }
+  body { height: auto; overflow: visible; }
+}
+</style>
+</head>
+<body>
+
+<!-- ========== 登录页（独立页面，覆盖在主页之上） ========== -->
+<div class="auth-page" id="authPage">
+  <div class="auth-deco auth-deco-1"></div>
+  <div class="auth-deco auth-deco-2"></div>
+  <div class="auth-wrap">
+    <div class="auth-brand">
+      <div class="logo" style="margin-bottom:28px;">
+        <div class="logo-icon" style="width:46px;height:46px;font-size:23px;border-radius:14px;">学</div>
+        <div>
+          <div class="logo-name" style="font-size:20px;">学伴</div>
+          <div class="logo-sub">超级学习助手</div>
+        </div>
+      </div>
+      <h1 class="auth-headline">看课、刷题、备考<br>一个空间就够了</h1>
+      <p class="auth-sub">把课程交给 AI：自动生成笔记与习题；把练习交给系统：刷题、错题、组卷、复盘一气呵成。</p>
+      <div class="auth-features">
+        <div class="auth-feature">
+          <span class="af-icon">🤖</span>
+          <div><b>AI 生成学习内容</b><span class="af-desc">目录 / 笔记 / 批注 / 习题，由 Agent 自动写入你的备考空间</span></div>
+        </div>
+        <div class="auth-feature">
+          <span class="af-icon">✏️</span>
+          <div><b>刷题与批注交互</b><span class="af-desc">本地判分即时反馈，正文随选随批注</span></div>
+        </div>
+        <div class="auth-feature">
+          <span class="af-icon">🩹</span>
+          <div><b>错题自动归集</b><span class="af-desc">错题本 + 组卷模考，补弱闭环直到考前</span></div>
+        </div>
+        <div class="auth-feature">
+          <span class="af-icon">🔌</span>
+          <div><b>任意 Agent 接入</b><span class="af-desc">复制凭证即可装配能力，数据按用户严格隔离</span></div>
+        </div>
+      </div>
+      <div class="auth-flow">看课 → AI 笔记 → 刷题 → 错题复盘 → 考前冲刺</div>
+    </div>
+
+    <div class="auth-card">
+      <!-- 第一步：登录 / 注册 -->
+      <div id="authStep1">
+        <div class="auth-tabs">
+          <div class="auth-tab active" id="tabLogin" onclick="showLogin()">登录</div>
+          <div class="auth-tab" id="tabRegister" onclick="showRegister()">注册</div>
+        </div>
+        <div id="loginPanel">
+          <div class="form-row">
+            <label class="form-label">账号</label>
+            <input class="form-input" id="loginAccount" placeholder="手机号 / 邮箱 / 用户名">
+          </div>
+          <div class="form-row">
+            <label class="form-label">密码</label>
+            <input class="form-input" type="password" id="loginPassword" placeholder="输入密码">
+          </div>
+          <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;margin-top:6px;" onclick="doLogin()">登 录</button>
+        </div>
+        <div id="registerPanel" style="display:none;">
+          <div class="form-row">
+            <label class="form-label">账号</label>
+            <input class="form-input" id="regAccount" placeholder="手机号 / 邮箱 / 用户名">
+          </div>
+          <div class="form-row">
+            <label class="form-label">密码</label>
+            <input class="form-input" type="password" id="regPassword" placeholder="至少 6 位">
+          </div>
+          <div class="form-row">
+            <label class="form-label">确认密码</label>
+            <input class="form-input" type="password" id="regPassword2" placeholder="再次输入密码">
+          </div>
+          <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;margin-top:6px;" onclick="doRegister()">注 册</button>
+        </div>
+        <div class="auth-agree">账号体系是订阅计费与学习数据存储的基础<br>登录即代表同意《用户协议》与《隐私政策》（演示文案）</div>
+      </div>
+
+      <!-- 第二步：创建备考空间（登录后原地切换） -->
+      <div id="authStep2" style="display:none;">
+        <div class="auth-steps">
+          <span class="a-step done">① 账号登录 ✓</span>
+          <span class="a-line"></span>
+          <span class="a-step cur">② 创建备考空间</span>
+        </div>
+        <div class="modal-title" style="margin-bottom:4px;">🎯 写下你的考试目标</div>
+        <div class="modal-sub" style="margin-bottom:18px;">自由填写，写清楚就行，不设下拉选项</div>
+        <div class="form-row">
+          <label class="form-label">考试目标（手写填写）</label>
+          <input class="form-input" id="authGoal" placeholder="如：软考 · 系统架构设计师">
+        </div>
+        <div class="form-row">
+          <label class="form-label">考试日期</label>
+          <input class="form-input" type="date" id="authDate" value="2026-11-07">
+        </div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;margin-top:6px;" onclick="confirmSetup()">确认并进入系统</button>
+        <div class="auth-agree">进入后将：创建备考空间 · 开启考试倒计时 · 弹出 Agent 接入凭证<br><a class="auth-link" onclick="backToLoginStep()">← 返回登录</a></div>
+      </div>
+    </div>
+  </div>
+  <div class="auth-footer">学伴 · 超级学习助手 — 让 AI 陪你备考（演示原型）</div>
+</div>
+
+<div class="app">
+  <!-- ========== Sidebar ========== -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <div class="logo-icon">学</div>
+        <div>
+          <div class="logo-name">学伴</div>
+          <div class="logo-sub">超级学习助手</div>
+        </div>
+      </div>
+      <div class="workspace-selector" onclick="openSetup()">
+        <span class="ws-name" id="wsName">软考 · 系统架构设计师</span>
+        <span class="ws-badge">备考中</span>
+      </div>
+      <div class="exam-countdown" onclick="openSetup()" title="点击修改考试目标与日期">
+        <div class="cd-num"><span id="cdDays">--</span><span class="cd-unit">天</span></div>
+        <div>
+          <div class="cd-label">距离考试</div>
+          <div class="cd-date" id="cdDateText">2026-11-07 · 软考 · 系统架构设计师</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-section-title">练习</div>
+        <div class="nav-item" onclick="switchView('quiz')">
+          <span class="icon">✏️</span> 刷题
+          <span class="count">128 题</span>
+        </div>
+        <div class="nav-item" onclick="switchView('wrong')">
+          <span class="icon">🩹</span> 错题本
+          <span class="count">23</span>
+        </div>
+        <div class="nav-item" onclick="switchView('assembly')">
+          <span class="icon">📜</span> 组卷
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-title">内容 · AI 生成（点目录可折叠）</div>
+        <div class="tree-folder" onclick="toggleTree(this)">
+          <span class="folder-caret">▼</span> 📂 架构师综合知识精讲
+          <span class="folder-count">4 集</span>
+        </div>
+        <div class="tree-children">
+          <div class="tree-item" data-ep="1" onclick="switchEpisode(1)">
+            <span class="tree-icon">📝</span> 第1集 软件架构概念
+          </div>
+          <div class="tree-item" data-ep="2" onclick="switchEpisode(2)">
+            <span class="tree-icon">📝</span> 第2集 架构设计基础
+          </div>
+          <div class="tree-item active" data-ep="3" onclick="switchEpisode(3)">
+            <span class="tree-icon">📝</span> 第3集 软件架构风格
+          </div>
+          <div class="tree-item" data-ep="4" onclick="switchEpisode(4)">
+            <span class="tree-icon">📝</span> 第4集 DSSA与ABSD
+          </div>
+        </div>
+        <div class="tree-folder collapsed" onclick="toggleTree(this)">
+          <span class="folder-caret">▼</span> 📂 案例分析专项
+          <span class="folder-count">2 集</span>
+        </div>
+        <div class="tree-children" style="display:none">
+          <div class="tree-item" data-ep="5" onclick="switchEpisode(5)">
+            <span class="tree-icon">📝</span> 第1集 质量属性与场景
+          </div>
+          <div class="tree-item" data-ep="6" onclick="switchEpisode(6)">
+            <span class="tree-icon">📝</span> 第2集 架构评估ATAM
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer" style="position:relative;cursor:pointer;" onclick="toggleUserMenu(event)" title="账号与接入设置">
+      <div class="avatar" id="userAvatar">刘</div>
+      <div>
+        <div class="user-name" id="userName">刘同学</div>
+        <div class="user-plan">账号 · 接入设置 ⌄</div>
+      </div>
+      <div class="user-menu" id="userMenu" onclick="event.stopPropagation()">
+        <div class="user-menu-item" onclick="reopenAgent()">🔌 Agent 接入凭证</div>
+        <div class="user-menu-item" onclick="openSetup()">🎯 考试目标设置</div>
+        <div class="user-menu-item danger" onclick="doLogout()">👋 退出登录</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== Main ========== -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title" id="topbarTitle">第3集 软件架构风格 · 笔记</div>
+        <div class="topbar-sub" id="topbarSub">架构师综合知识精讲 · 综合知识</div>
+      </div>
+      <div class="topbar-spacer"></div>
+      <div class="cd-chip" id="cdChip">⏳ 距离考试 -- 天</div>
+      <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨 打印</button>
+      <button class="btn btn-ghost btn-sm" onclick="toast('全局搜索：笔记 / 题目 / 错题')">🔍 搜索</button>
+    </div>
+
+    <div class="content-area">
+
+      <!-- ========== Notes ========== -->
+      <div class="view active" id="view-notes">
+        <div class="notes-view">
+
+          <div class="episode-bar">
+            <button class="ep-btn" onclick="switchEpisode(currentEp-1)">← 上一集</button>
+            <div class="dd" id="epDd">
+              <div class="dd-current" onclick="toggleDd('epDd')">
+                <span id="epCurrent">第3集 软件架构风格</span>
+                <span class="dd-caret">▾</span>
+              </div>
+              <div class="dd-panel">
+                <input class="dd-search" id="epSearch" placeholder="搜索集数或标题…" oninput="renderEpList(this.value)" onclick="event.stopPropagation()">
+                <div class="dd-list" id="epList"></div>
+              </div>
+            </div>
+            <button class="ep-btn" onclick="switchEpisode(currentEp+1)">下一集 →</button>
+            <span class="ep-progress" id="epProgress">已学 3 / 4 集</span>
+          </div>
+
+          <div class="note-tabs">
+            <div class="note-tab active" onclick="switchNoteTab(this,'note')">📝 笔记</div>
+            <div class="note-tab" onclick="switchNoteTab(this,'quiz')">✏️ 本集习题<span class="tab-count">12</span></div>
+          </div>
+
+          <div class="note-header">
+            <div class="note-meta">
+              <span class="tag" id="noteTag">综合知识</span>
+              <span class="tag" style="background:var(--green-light);color:var(--green);">AI 生成</span>
+              <span>2026-08-14</span>
+              <span>时长 28 分钟</span>
+              <span>来源：B站视频 → AI 生成笔记与批注</span>
+            </div>
+            <h1 class="note-title" id="noteTitle">软件架构风格</h1>
+          </div>
+
+          <div class="note-section">
+            <h2>本集框架</h2>
+            <div class="note-body">
+              <p>本集讲解五大经典架构风格的核心思想、适用场景与对比。重点掌握数据流风格、调用返回风格、独立构件风格、虚拟机风格和仓库风格的特征区分。</p>
+            </div>
+          </div>
+
+          <div class="note-section">
+            <h2>知识卡片</h2>
+
+            <h3>★ 数据流风格</h3>
+            <div class="note-body">
+              <p><span class="star-marker">★</span><b>批处理</b>：数据整体传递，适合大规模数据处理。<span class="annotation-highlight">老师强调：批处理与管道的区别在于数据传递粒度<span class="annotation-popup">批处理是整体传递，管道是流式传递</span></span></p>
+              <p><span class="star-marker">★</span><b>管道-过滤器</b>：数据流式传递，每个过滤器独立处理，支持并行。典型应用：编译器四阶段。</p>
+            </div>
+
+            <h3>调用返回风格</h3>
+            <div class="note-body">
+              <p>主程序-子程序：面向过程，层次清晰。面向对象：封装继承多态，适用于需求变化频繁的系统。</p>
+              <p><span class="star-marker">★</span><b>层次结构</b>：每层只与相邻层交互，典型如 OSI 七层模型、TCP/IP 四层模型。<span class="annotation-highlight">考点：层次结构的最大优点是可扩展性和可移植性<span class="annotation-popup">层次结构支持跨层透明，方便替换实现</span></span></p>
+            </div>
+
+            <h3>独立构件风格</h3>
+            <div class="note-body">
+              <p>进程通信：构件间通过消息传递交互，松耦合。</p>
+              <p><span class="star-marker">★</span><b>事件驱动</b>：构件通过事件订阅/发布解耦。典型应用：GUI 框架、消息队列。<span class="annotation-highlight">老师补充：事件驱动 vs 观察者模式的区别<span class="annotation-popup">事件驱动更宏观，观察者模式是事件驱动的一种实现</span></span></p>
+            </div>
+
+            <h3>虚拟机与仓库风格</h3>
+            <div class="note-body">
+              <p>解释器：解释执行非原生代码，灵活但性能低。典型：JVM、Python 解释器。基于规则的系统：用规则引擎驱动业务逻辑，适合专家系统。</p>
+              <p><span class="star-marker">★</span><b>黑板系统</b>：中央黑板 + 多知识源 + 控制器，适合不确定性高的问题。<span class="annotation-highlight">考点：黑板架构的三要素<span class="annotation-popup">黑板(共享数据) + 知识源(独立构件) + 控制器(调度)</span></span></p>
+            </div>
+          </div>
+
+          <div class="note-section">
+            <h2>速查表</h2>
+            <table class="cheat">
+              <thead><tr><th>风格</th><th>核心特征</th><th>典型应用</th></tr></thead>
+              <tbody>
+                <tr><td>批处理</td><td>整体数据传递</td><td>ETL、数据清洗</td></tr>
+                <tr><td>管道-过滤器</td><td>流式传递、可并行</td><td>编译器</td></tr>
+                <tr><td>层次结构</td><td>相邻层交互</td><td>OSI、TCP/IP</td></tr>
+                <tr><td>事件驱动</td><td>发布/订阅解耦</td><td>GUI、MQ</td></tr>
+                <tr><td>黑板</td><td>中央黑板+知识源</td><td>语音识别、专家系统</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="note-section">
+            <h2>考试提示</h2>
+            <div class="exam-tip"><span class="star-marker">★</span>常考判断题：管道-过滤器风格是否支持并行？答：<b>支持</b>，各过滤器可并行执行。</div>
+            <div class="exam-tip"><span class="star-marker">★</span>常考选择题：以下哪种风格最适合不确定性高的问题求解？答：<b>黑板架构</b>。</div>
+            <div class="exam-tip"><span class="star-marker">★</span>易错点：解释器是<b>运行时翻译</b>，编译器是<b>提前翻译</b>。编译器的管道-过滤器风格是编译过程本身的架构，不要混淆。</div>
+          </div>
+
+          <div class="note-actions">
+            <button class="btn btn-primary btn-sm" onclick="annotateFromButton()">✏️ 补充批注</button>
+            <span style="font-size:12px;color:var(--muted-light);align-self:center;">先在正文中选中文字即可添加批注 · 点击已有批注可查看详情</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== Quiz ========== -->
+      <div class="view" id="view-quiz">
+        <div class="quiz-view">
+
+          <div class="quiz-scope">
+            <span class="scope-label">练习范围</span>
+            <div class="dd" id="scopeDd">
+              <div class="dd-current" onclick="toggleDd('scopeDd')">
+                <span id="scopeCurrent">跨集综合练</span>
+                <span class="dd-caret">▾</span>
+              </div>
+              <div class="dd-panel">
+                <input class="dd-search" id="scopeSearch" placeholder="搜索集数或范围…" oninput="renderScopeList(this.value)" onclick="event.stopPropagation()">
+                <div class="dd-list" id="scopeList"></div>
+              </div>
+            </div>
+            <span class="scope-hint" id="scopeHint">共 128 题符合条件</span>
+          </div>
+
+          <div class="src-hint">💡 题库数据来源：AI 为每集笔记生成的习题 —— 例如「第1集 软件架构概念」生成的习题，即刷题时该集范围内的题目</div>
+
+          <div class="quiz-progress-bar">
+            <div class="progress-track"><div class="progress-fill" id="quizFill" style="width: 25%;"></div></div>
+            <div class="progress-text" id="quizCount">第 3 / 12 题</div>
+          </div>
+
+          <div class="quiz-card">
+            <div class="quiz-tag-row">
+              <span class="quiz-tag star">★ 考点</span>
+              <span class="quiz-tag subject">综合知识</span>
+              <span class="quiz-tag type">单选题</span>
+            </div>
+            <div class="quiz-question">
+              在管道-过滤器架构风格中，以下哪项是其最显著的特征？
+            </div>
+            <div class="quiz-options" id="qOptions">
+              <div class="quiz-option" onclick="answer(this,false)">
+                <div class="opt-label">A</div>
+                <span>构件间通过共享变量进行通信</span>
+              </div>
+              <div class="quiz-option" onclick="answer(this,true)">
+                <div class="opt-label">B</div>
+                <span>数据以流的方式在过滤器间传递，支持并行处理</span>
+              </div>
+              <div class="quiz-option" onclick="answer(this,false)">
+                <div class="opt-label">C</div>
+                <span>通过事件发布和订阅实现构件解耦</span>
+              </div>
+              <div class="quiz-option" onclick="answer(this,false)">
+                <div class="opt-label">D</div>
+                <span>使用中央黑板共享数据并由控制器调度</span>
+              </div>
+            </div>
+            <div class="quiz-explanation" id="quizExplanation">
+              <div class="exp-label" id="expLabel">✓ 答对了 · 解析</div>
+              管道-过滤器风格的核心特征是数据以流的方式在过滤器之间传递，每个过滤器独立处理输入并产生输出，因此天然支持并行处理。选项A描述的是仓库风格，选项C描述的是事件驱动风格，选项D描述的是黑板架构风格。
+              <div class="exp-src">出自笔记：知识卡片 → 数据流风格 → 管道-过滤器</div>
+            </div>
+            <div class="quiz-footer">
+              <button class="btn btn-ghost btn-sm" onclick="toast('已标记为重点')">⭐ 标记重点</button>
+              <button class="btn btn-primary btn-sm" id="nextBtn" onclick="nextQuestion()" style="visibility:hidden">下一题 →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== Wrong ========== -->
+      <div class="view" id="view-wrong">
+        <div class="wrong-view">
+          <div class="wrong-header">
+            <div class="wrong-stats">
+              <div class="stat-card danger">
+                <div class="stat-num">23</div>
+                <div class="stat-label">累计错题</div>
+              </div>
+              <div class="stat-card warning">
+                <div class="stat-num">8</div>
+                <div class="stat-label">本周新增</div>
+              </div>
+              <div class="stat-card ok">
+                <div class="stat-num" id="statMastered">15</div>
+                <div class="stat-label">已掌握</div>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="startWrongRedo()">开始重刷错题</button>
+          </div>
+
+          <div class="src-hint">💡 错题本数据来源：刷题 / 模考过程中的答错记录自动归集（使用过程数据）</div>
+
+          <div class="assembly-filters" style="margin-bottom:16px;">
+            <span class="filter-label">筛选</span>
+            <div class="filter-chip active" onclick="filterWrong(this,'全部 23 题')">全部</div>
+            <div class="filter-chip" onclick="filterWrong(this,'综合知识 14 题')">综合知识</div>
+            <div class="filter-chip" onclick="filterWrong(this,'案例分析 6 题')">案例分析</div>
+            <div class="filter-chip" onclick="filterWrong(this,'★ 重点错题 9 题')">★ 重点错题</div>
+            <div class="filter-chip" onclick="filterWrong(this,'错 2 次以上 5 题')">错 2 次以上</div>
+          </div>
+
+          <div class="wrong-list">
+            <div class="wrong-item" id="wrongItem1" onclick="redoWrong(1)">
+              <div class="wrong-icon">✕</div>
+              <div class="wrong-content">
+                <div class="wrong-question">在黑板架构中，控制器的核心职责是什么？</div>
+                <div class="wrong-meta">
+                  <span>综合知识 · 第3集</span>
+                  <span>2026-08-13</span>
+                  <span class="wrong-count">错 3 次</span>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();redoWrong(1)">重做</button>
+            </div>
+
+            <div class="wrong-item" id="wrongItem2" onclick="redoWrong(2)">
+              <div class="wrong-icon">✕</div>
+              <div class="wrong-content">
+                <div class="wrong-question">以下哪种架构风格最适合处理不确定性高的问题求解？</div>
+                <div class="wrong-meta">
+                  <span>综合知识 · 第3集</span>
+                  <span>2026-08-13</span>
+                  <span class="wrong-count">错 2 次</span>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();redoWrong(2)">重做</button>
+            </div>
+
+            <div class="wrong-item" id="wrongItem3" onclick="redoWrong(3)">
+              <div class="wrong-icon">✕</div>
+              <div class="wrong-content">
+                <div class="wrong-question">管道-过滤器风格与批处理风格的主要区别在于？</div>
+                <div class="wrong-meta">
+                  <span>综合知识 · 第3集</span>
+                  <span>2026-08-12</span>
+                  <span class="wrong-count">错 2 次</span>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();redoWrong(3)">重做</button>
+            </div>
+
+            <div class="wrong-item" id="wrongItem4" onclick="redoWrong(4)">
+              <div class="wrong-icon">✕</div>
+              <div class="wrong-content">
+                <div class="wrong-question">质量属性场景的六个要素分别是什么？</div>
+                <div class="wrong-meta">
+                  <span>案例分析 · 质量属性</span>
+                  <span>2026-08-10</span>
+                  <span class="wrong-count">错 2 次</span>
+                </div>
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();redoWrong(4)">重做</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== Assembly ========== -->
+      <div class="view" id="view-assembly">
+        <div class="assembly-view">
+          <div class="assembly-layout">
+            <div class="assembly-main">
+              <div class="src-hint">💡 组卷数据来源：从题库中的题目（AI 生成题 + 错题）筛选组合成模拟试卷</div>
+              <div class="assembly-filters">
+                <span class="filter-label">科目</span>
+                <div class="filter-chip active" onclick="chipToggle(this)">全部</div>
+                <div class="filter-chip" onclick="chipToggle(this)">综合知识</div>
+                <div class="filter-chip" onclick="chipToggle(this)">案例分析</div>
+                <span class="filter-label" style="margin-left:14px;">来源</span>
+                <div class="filter-chip active" onclick="chipToggle(this)">全部</div>
+                <div class="filter-chip" onclick="chipToggle(this)">★ 考点</div>
+                <div class="filter-chip" onclick="chipToggle(this)">错题</div>
+                <span class="filter-label" style="margin-left:14px;">题型</span>
+                <div class="filter-chip active" onclick="chipToggle(this)">全部</div>
+                <div class="filter-chip" onclick="chipToggle(this)">单选</div>
+                <div class="filter-chip" onclick="chipToggle(this)">判断</div>
+              </div>
+
+              <div class="question-pool">
+                <div class="pool-item">
+                  <div class="pool-checkbox checked" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">在管道-过滤器架构风格中，以下哪项是其最显著的特征？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">综合知识</span>
+                      <span class="meta-tag star">★ 考点</span>
+                      <span class="meta-tag source">第3集</span>
+                      <span class="meta-tag wrong">错 2 次</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pool-item">
+                  <div class="pool-checkbox checked" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">在黑板架构中，控制器的核心职责是什么？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">综合知识</span>
+                      <span class="meta-tag star">★ 考点</span>
+                      <span class="meta-tag source">第3集</span>
+                      <span class="meta-tag wrong">错 3 次</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pool-item">
+                  <div class="pool-checkbox" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">以下哪种架构风格最适合处理不确定性高的问题求解？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">综合知识</span>
+                      <span class="meta-tag star">★ 考点</span>
+                      <span class="meta-tag source">第3集</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pool-item">
+                  <div class="pool-checkbox checked" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">层次结构架构风格的最大优点是什么？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">综合知识</span>
+                      <span class="meta-tag star">★ 考点</span>
+                      <span class="meta-tag source">第3集</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pool-item">
+                  <div class="pool-checkbox" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">DSSA 与一般软件架构的主要区别是什么？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">综合知识</span>
+                      <span class="meta-tag source">第4集</span>
+                      <span class="meta-tag wrong">错 1 次</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pool-item">
+                  <div class="pool-checkbox" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">事件驱动风格与观察者模式的关系是什么？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">综合知识</span>
+                      <span class="meta-tag star">★ 考点</span>
+                      <span class="meta-tag source">第3集</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pool-item">
+                  <div class="pool-checkbox checked" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">管道-过滤器风格与批处理风格的主要区别在于？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">综合知识</span>
+                      <span class="meta-tag star">★ 考点</span>
+                      <span class="meta-tag source">第3集</span>
+                      <span class="meta-tag wrong">错 2 次</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="pool-item">
+                  <div class="pool-checkbox" onclick="togglePool(this)"></div>
+                  <div class="pool-content">
+                    <div class="pool-question">质量属性场景的六个要素分别是什么？</div>
+                    <div class="pool-meta">
+                      <span class="meta-tag subject">案例分析</span>
+                      <span class="meta-tag source">质量属性</span>
+                      <span class="meta-tag wrong">错 2 次</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="assembly-cart">
+              <div class="cart-title">📜 组卷面板</div>
+              <div class="cart-progress">
+                已选 <span class="filled" id="selectedCount">4</span> / 75 题
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" id="cartProgress" style="width: 5.3%;"></div>
+              </div>
+
+              <div class="cart-config">
+                <div class="cart-config-row">
+                  <span class="label">试卷名称</span>
+                  <span class="value">架构师模拟卷 #1</span>
+                </div>
+                <div class="cart-config-row">
+                  <span class="label">目标题数</span>
+                  <span class="value">75 题</span>
+                </div>
+                <div class="cart-config-row">
+                  <span class="label">满分</span>
+                  <span class="value">75 分</span>
+                </div>
+                <div class="cart-config-row">
+                  <span class="label">限时</span>
+                  <span class="value">150 分钟</span>
+                </div>
+              </div>
+
+              <div class="cart-stat-grid">
+                <div class="cart-stat">
+                  <div class="num" id="csStar" style="color:var(--gold);">3</div>
+                  <div class="lbl">★ 考点</div>
+                </div>
+                <div class="cart-stat">
+                  <div class="num" id="csWrong" style="color:var(--red);">3</div>
+                  <div class="lbl">含错题</div>
+                </div>
+                <div class="cart-stat">
+                  <div class="num" id="csComp" style="color:var(--accent);">4</div>
+                  <div class="lbl">综合知识</div>
+                </div>
+                <div class="cart-stat">
+                  <div class="num" id="csCase" style="color:var(--muted);">0</div>
+                  <div class="lbl">案例分析</div>
+                </div>
+              </div>
+
+              <div class="cart-actions">
+                <button class="btn btn-primary" onclick="autoFill()">⚡ 自动补齐至 75 题</button>
+                <button class="btn btn-ghost" onclick="previewPaper()">👁 预览试卷</button>
+                <button class="btn btn-ghost" onclick="askStartMock()">🚀 开始模考</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== Mock Exam ========== -->
+      <div class="view" id="view-mock">
+        <div class="mock-view">
+          <div class="mock-info-bar">
+            <div>
+              <div class="mock-title">📜 架构师模拟卷 #1</div>
+              <div class="mock-meta">75 道单选题 · 满分 75 分 · 倒计时结束自动交卷</div>
+            </div>
+            <div class="mock-timer" id="mockTimer">⏱ 02:30:00</div>
+            <button class="btn btn-primary btn-sm" onclick="askSubmitMock()">交卷</button>
+          </div>
+
+          <div class="mock-layout">
+            <div class="mock-main">
+              <div class="quiz-card">
+                <div class="quiz-tag-row" id="mockTags"></div>
+                <div class="quiz-question" id="mockQuestion"></div>
+                <div class="quiz-options" id="mockOptions"></div>
+                <div class="quiz-footer">
+                  <button class="btn btn-ghost btn-sm" onclick="mockPrev()">← 上一题</button>
+                  <button class="btn btn-ghost btn-sm" onclick="toast('已标记本题（演示）')">🚩 标记</button>
+                  <button class="btn btn-primary btn-sm" onclick="mockNext()">下一题 →</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mock-sheet">
+              <div class="sheet-title">答题卡</div>
+              <div class="sheet-legend">
+                <span><i class="lg lg-empty"></i>未答</span>
+                <span><i class="lg lg-done"></i>已答</span>
+                <span><i class="lg lg-cur"></i>当前</span>
+              </div>
+              <div class="sheet-grid" id="sheetGrid"></div>
+              <div class="sheet-stat" id="sheetStat">已答 0 / 75</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========== 错题重做弹窗 ========== -->
+<div class="modal-overlay" id="redoOverlay" onclick="if(event.target===this)closeModal('redoOverlay')">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">🩹 错题重做</div>
+        <div class="modal-sub" id="redoSub"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('redoOverlay')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="redoQuiz">
+        <div class="quiz-tag-row" id="redoTags"></div>
+        <div class="quiz-question" id="redoQuestion"></div>
+        <div class="quiz-options" id="redoOptions"></div>
+        <div class="quiz-explanation" id="redoExplanation"></div>
+      </div>
+      <div id="redoSummary" style="display:none;text-align:center;padding:16px 0;">
+        <div style="font-size:38px;">🎯</div>
+        <div style="font-family:var(--serif);font-size:20px;font-weight:700;margin:8px 0 4px;">重做完成</div>
+        <div style="font-size:13.5px;color:var(--muted);" id="redoSummaryText"></div>
+      </div>
+    </div>
+    <div class="modal-foot" id="redoFoot"></div>
+  </div>
+</div>
+
+<!-- ========== 试卷预览弹窗 ========== -->
+<div class="modal-overlay" id="previewOverlay" onclick="if(event.target===this)closeModal('previewOverlay')">
+  <div class="modal" style="width:680px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">👁 试卷预览 · 架构师模拟卷 #1</div>
+        <div class="modal-sub">75 题 · 满分 75 分 · 限时 150 分钟 · 生成于 2026-08-14</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('previewOverlay')">✕</button>
+    </div>
+    <div class="modal-body" id="pvBody"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="toast('已导出「架构师模拟卷 #1.pdf」（演示）')">📥 导出试卷 (PDF)</button>
+      <button class="btn btn-primary" onclick="closeModal('previewOverlay');askStartMock()">🚀 开始模考</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 通用确认弹窗 ========== -->
+<div class="modal-overlay" id="confirmOverlay" onclick="if(event.target===this)closeModal('confirmOverlay')">
+  <div class="modal" style="width:440px;">
+    <div class="modal-head">
+      <div class="modal-title" id="confirmTitle">提示</div>
+      <button class="modal-close" onclick="closeModal('confirmOverlay')">✕</button>
+    </div>
+    <div class="modal-body" id="confirmText" style="font-size:13.5px;color:var(--muted);line-height:1.9;"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('confirmOverlay')">取消</button>
+      <button class="btn btn-primary" id="confirmOkBtn" onclick="confirmOk()">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 模考结果弹窗 ========== -->
+<div class="modal-overlay" id="mockResultOverlay" onclick="if(event.target===this)closeModal('mockResultOverlay')">
+  <div class="modal" style="width:470px;">
+    <div class="modal-head">
+      <div class="modal-title">模考结果</div>
+      <button class="modal-close" onclick="closeModal('mockResultOverlay')">✕</button>
+    </div>
+    <div class="modal-body" style="text-align:center;">
+      <div class="result-score"><span id="resScore">0</span><span class="res-unit">分</span></div>
+      <div class="result-sub" id="resSub"></div>
+      <div class="result-grid">
+        <div><div class="res-num" style="color:var(--green);" id="resRight">0</div><div class="res-lbl">答对</div></div>
+        <div><div class="res-num" style="color:var(--red);" id="resWrong">0</div><div class="res-lbl">答错</div></div>
+        <div><div class="res-num" style="color:var(--muted);" id="resSkip">0</div><div class="res-lbl">未答</div></div>
+      </div>
+      <div class="result-note">错题已自动加入错题本，可在「错题本」中重做</div>
+    </div>
+    <div class="modal-foot" style="justify-content:center;">
+      <button class="btn btn-ghost" onclick="closeModal('mockResultOverlay');switchView('assembly')">返回组卷</button>
+      <button class="btn btn-primary" onclick="closeModal('mockResultOverlay');switchView('wrong')">查看错题本</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 考试目标设置弹窗（头像菜单 / 工作空间点击可再次打开） ========== -->
+<div class="modal-overlay" id="setupOverlay">
+  <div class="modal" style="width:460px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">🎯 考试目标设置</div>
+        <div class="modal-sub">修改考试目标与考试日期，倒计时同步更新</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('setupOverlay')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">考试目标（手写填写）</label>
+        <input class="form-input" id="setupGoal" placeholder="如：软考 · 系统架构设计师">
+      </div>
+      <div class="form-row">
+        <label class="form-label">考试日期</label>
+        <input class="form-input" type="date" id="setupDate" value="2026-11-07">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('setupOverlay')">取消</button>
+      <button class="btn btn-primary" onclick="confirmSetup()">保存设置</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Agent 接入弹窗（登录后自动弹出） ========== -->
+<div class="modal-overlay" id="agentOverlay" onclick="if(event.target===this)closeModal('agentOverlay')">
+  <div class="modal" style="width:600px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">🔌 接入 AI Agent</div>
+        <div class="modal-sub">复制下方接入凭证，发送给任意 Agent（如 TRAE），它会自动获得与本系统交互的能力</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('agentOverlay')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="agent-steps">
+        <div class="agent-step"><span class="step-no">1</span><span><b>复制接入凭证</b>　点击下方「复制接入凭证」按钮</span></div>
+        <div class="agent-step"><span class="step-no">2</span><span><b>发送给任意 Agent</b>　把凭证粘贴到 Agent 对话中（TRAE 等均可）</span></div>
+        <div class="agent-step"><span class="step-no">3</span><span><b>自动装配能力</b>　Agent 访问我们的服务，服务返回对应的 Skill、提示词与 MCP 配置</span></div>
+        <div class="agent-step"><span class="step-no">4</span><span><b>开始协作</b>　Agent 为你生成目录 / 笔记 / 批注 / 习题，读取错题记录，发起复盘</span></div>
+      </div>
+      <div class="agent-config" id="agentConfig"></div>
+      <div class="agent-note">🔒 凭证与当前登录用户绑定，Agent 只能读写你本人的学习数据，不同用户之间严格隔离，不会串数据。</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('agentOverlay');toast('随时可从左下角头像菜单 → 🔌 Agent 接入凭证 重新打开')">稍后接入</button>
+      <button class="btn btn-primary" onclick="copyAgentConfig()">📋 复制接入凭证</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 添加批注弹窗 ========== -->
+<div class="modal-overlay" id="annoModal" onclick="if(event.target===this)closeModal('annoModal')">
+  <div class="modal" style="width:480px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">✏️ 补充批注</div>
+        <div class="modal-sub">为选中内容添加个人笔记或疑问</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('annoModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">选中原文</div>
+      <div id="annoQuote" style="background:var(--surface-2);border-left:3px solid var(--gold);padding:9px 14px;border-radius:0 8px 8px 0;font-size:13.5px;margin-bottom:14px;line-height:1.7;"></div>
+      <textarea id="annoText" style="width:100%;min-height:110px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--sans);font-size:13.5px;resize:vertical;outline:none;background:var(--surface);color:var(--ink);" placeholder="输入批注内容…"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal('annoModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAnnotation()">保存批注</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 批注详情弹窗 ========== -->
+<div class="modal-overlay" id="annoDetailOverlay" onclick="if(event.target===this)closeModal('annoDetailOverlay')">
+  <div class="modal" style="width:460px;">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title">📌 批注详情</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('annoDetailOverlay')">✕</button>
+    </div>
+    <div class="modal-body" id="annoDetailBody"></div>
+    <div class="modal-foot" id="annoDetailFoot"></div>
+  </div>
+</div>
+
+<button class="anno-fab" id="annoFab" onclick="annotateFromFab()">✏️ 批注</button>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ========== Data ========== */
+const episodes = [
+  { n:1, title:'软件架构概念', course:'架构师综合知识精讲', subject:'综合知识', done:true },
+  { n:2, title:'架构设计基础', course:'架构师综合知识精讲', subject:'综合知识', done:true },
+  { n:3, title:'软件架构风格', course:'架构师综合知识精讲', subject:'综合知识', done:true },
+  { n:4, title:'DSSA与ABSD', course:'架构师综合知识精讲', subject:'综合知识', done:false },
+  { n:5, title:'质量属性与场景', course:'案例分析专项', subject:'案例分析', done:true },
+  { n:6, title:'架构评估ATAM', course:'案例分析专项', subject:'案例分析', done:false }
+];
+let currentEp = 3;
+
+const viewTitles = {
+  notes: {},
+  quiz: { title: '刷题', sub: '题库来自 AI 为每集笔记生成的习题 · 可按集筛选' },
+  wrong: { title: '错题本', sub: '刷题 / 模考过程中的答错记录自动归集' },
+  assembly: { title: '组卷', sub: '从题库（AI 生成题 + 错题）筛选题目，组装模拟试卷' },
+  mock: { title: '模考', sub: '架构师模拟卷 #1 · 限时 150 分钟' }
+};
+
+/* ========== View switching ========== */
+function switchView(view) {
+  if (view !== 'mock') stopMockTimer();
+  document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + view).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (view !== 'notes') document.querySelectorAll('.tree-item').forEach(n => n.classList.remove('active'));
+  const navMap = { quiz: 0, wrong: 1, assembly: 2 };
+  const navItems = document.querySelectorAll('.sidebar-nav .nav-section:first-child .nav-item');
+  if (navMap[view] !== undefined && navItems[navMap[view]]) navItems[navMap[view]].classList.add('active');
+  const e = episodes[currentEp - 1];
+  if (view === 'notes') {
+    document.getElementById('topbarTitle').textContent = '第' + currentEp + '集 ' + e.title + ' · 笔记';
+    document.getElementById('topbarSub').textContent = e.course + ' · ' + e.subject;
+  } else {
+    document.getElementById('topbarTitle').textContent = viewTitles[view].title;
+    document.getElementById('topbarSub').textContent = viewTitles[view].sub;
+  }
+  document.querySelector('.content-area').scrollTop = 0;
+}
+
+function switchEpisode(ep) {
+  const e = episodes.find(x => x.n === ep);
+  if (!e) { toast(ep < 1 ? '已经是第一集了' : '已经是最后一集了'); return; }
+  currentEp = ep;
+  document.querySelectorAll('.tree-item').forEach(n => n.classList.remove('active'));
+  const treeItem = document.querySelector('.tree-item[data-ep="' + ep + '"]');
+  if (treeItem) {
+    treeItem.classList.add('active');
+    const kids = treeItem.closest('.tree-children');
+    const folder = kids ? kids.previousElementSibling : null;
+    if (folder && folder.classList.contains('collapsed')) toggleTree(folder);
+  }
+  document.getElementById('epCurrent').textContent = '第' + ep + '集 ' + e.title;
+  document.getElementById('noteTitle').textContent = e.title;
+  document.getElementById('noteTag').textContent = e.subject;
+  updateEpProgress();
+  closeAllDd();
+  switchView('notes');
+}
+
+function updateEpProgress() {
+  const course = episodes[currentEp - 1].course;
+  const list = episodes.filter(x => x.course === course);
+  const done = list.filter(x => x.done).length;
+  document.getElementById('epProgress').textContent = '已学 ' + done + ' / ' + list.length + ' 集';
+}
+
+function toggleTree(folder) {
+  const kids = folder.nextElementSibling;
+  if (!kids || !kids.classList.contains('tree-children')) return;
+  const collapsed = folder.classList.toggle('collapsed');
+  kids.style.display = collapsed ? 'none' : '';
+}
+
+function switchNoteTab(el, tab) {
+  document.querySelectorAll('.note-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab === 'quiz') {
+    switchView('quiz');
+    selectScope('ep' + currentEp);
+    document.getElementById('topbarTitle').textContent = '第' + currentEp + '集 ' + episodes[currentEp-1].title + ' · 本集习题';
+    document.getElementById('topbarSub').textContent = '架构师综合知识精讲 · 综合知识';
+  }
+}
+
+/* ========== Generic searchable dropdown ========== */
+function toggleDd(id) {
+  const el = document.getElementById(id);
+  const wasOpen = el.classList.contains('open');
+  closeAllDd();
+  if (!wasOpen) {
+    el.classList.add('open');
+    const search = el.querySelector('.dd-search');
+    if (search) { search.value = ''; search.dispatchEvent(new Event('input')); setTimeout(() => search.focus(), 50); }
+  }
+}
+function closeAllDd() { document.querySelectorAll('.dd').forEach(d => d.classList.remove('open')); }
+document.addEventListener('click', e => { if (!e.target.closest('.dd')) closeAllDd(); });
+
+/* ========== Episode dropdown ========== */
+function renderEpList(filter) {
+  const f = (filter || '').trim().toLowerCase();
+  const list = episodes.filter(e => !f || (('第' + e.n + '集 ' + e.title + ' ' + e.course).toLowerCase().includes(f)));
+  const box = document.getElementById('epList');
+  if (!list.length) {
+    box.innerHTML = '<div style="padding:14px 10px;font-size:12px;color:var(--muted-light)">没有匹配的集数</div>';
+    return;
+  }
+  let html = '';
+  [...new Set(list.map(e => e.course))].forEach(c => {
+    html += '<div class="dd-group">' + c + '</div>';
+    list.filter(e => e.course === c).forEach(e => {
+      html += '<div class="dd-item' + (e.n === currentEp ? ' active' : '') + '" onclick="switchEpisode(' + e.n + ')">'
+        + '<span>第' + e.n + '集 ' + e.title + '</span>'
+        + '<span class="di-meta' + (e.done ? ' done' : '') + '">' + (e.done ? '已学 ✓' : '未学') + '</span></div>';
+    });
+  });
+  box.innerHTML = html;
+}
+renderEpList('');
+
+/* ========== Scope dropdown ========== */
+const scopeOptions = [
+  { id: 'all', name: '跨集综合练', meta: '156 题' },
+  { id: 'ep1', name: '第1集 软件架构概念', meta: '30 题' },
+  { id: 'ep2', name: '第2集 架构设计基础', meta: '26 题' },
+  { id: 'ep3', name: '第3集 软件架构风格', meta: '42 题' },
+  { id: 'ep4', name: '第4集 DSSA与ABSD', meta: '18 题' },
+  { id: 'ep5', name: '案例分析 第1集 质量属性与场景', meta: '16 题' },
+  { id: 'ep6', name: '案例分析 第2集 架构评估ATAM', meta: '12 题' },
+  { id: 'wrong', name: '只练错题', meta: '23 题' }
+];
+let currentScope = 'all';
+
+function renderScopeList(filter) {
+  const f = (filter || '').trim().toLowerCase();
+  const list = scopeOptions.filter(o => !f || o.name.toLowerCase().includes(f));
+  const box = document.getElementById('scopeList');
+  box.innerHTML = list.length
+    ? list.map(o => '<div class="dd-item' + (o.id === currentScope ? ' active' : '') + '" onclick="selectScope(\'' + o.id + '\')">'
+        + '<span>' + o.name + '</span><span class="di-meta">' + o.meta + '</span></div>').join('')
+    : '<div style="padding:14px 10px;font-size:12px;color:var(--muted-light)">没有匹配的范围</div>';
+}
+function selectScope(id) {
+  currentScope = id;
+  const opt = scopeOptions.find(o => o.id === id);
+  document.getElementById('scopeCurrent').textContent = opt.name;
+  document.getElementById('scopeHint').textContent = '共 ' + opt.meta.replace(/\s/g, '') + ' 符合条件';
+  closeAllDd();
+}
+renderScopeList('');
+
+/* ========== Quiz ========== */
+let qIndex = 3, qTotal = 12;
+function answer(el, correct) {
+  const opts = document.querySelectorAll('#qOptions .quiz-option');
+  opts.forEach(o => o.classList.add('disabled'));
+  el.classList.add(correct ? 'correct' : 'wrong');
+  if (!correct) opts.forEach(o => { if (o.getAttribute('onclick').includes('true')) o.classList.add('correct'); });
+  const ex = document.getElementById('quizExplanation');
+  const label = document.getElementById('expLabel');
+  label.textContent = correct ? '✓ 答对了 · 解析' : '✕ 再想想 · 解析';
+  label.style.color = correct ? 'var(--green)' : 'var(--red)';
+  ex.style.borderLeftColor = correct ? 'var(--green)' : 'var(--red)';
+  ex.classList.add('show');
+  document.getElementById('nextBtn').style.visibility = 'visible';
+  toast(correct ? '答对了，已记录' : '答错了，已加入错题本');
+}
+function nextQuestion() {
+  qIndex = qIndex >= qTotal ? 1 : qIndex + 1;
+  document.getElementById('quizCount').textContent = '第 ' + qIndex + ' / ' + qTotal + ' 题';
+  document.getElementById('quizFill').style.width = (qIndex / qTotal * 100) + '%';
+  document.querySelectorAll('#qOptions .quiz-option').forEach(o => o.classList.remove('disabled', 'correct', 'wrong'));
+  document.getElementById('quizExplanation').classList.remove('show');
+  document.getElementById('nextBtn').style.visibility = 'hidden';
+}
+
+/* ========== Wrong ========== */
+const wrongQuestions = [
+  { id: 1, subject: '综合知识', src: '第3集', times: 3,
+    q: '在黑板架构中，控制器的核心职责是什么？',
+    opts: ['管理黑板上的数据读写', '监测黑板变化并调度知识源激活', '封装核心业务逻辑', '处理与外部系统的交互'],
+    ans: 1,
+    exp: '黑板架构三要素：黑板（共享数据）、知识源（独立构件）、控制器。控制器负责监测黑板上的变化，并决定下一步激活哪个知识源。',
+    note: '出自笔记：知识卡片 → 虚拟机与仓库风格 → 黑板系统' },
+  { id: 2, subject: '综合知识', src: '第3集', times: 2,
+    q: '以下哪种架构风格最适合处理不确定性高的问题求解？',
+    opts: ['管道-过滤器风格', '层次结构风格', '事件驱动风格', '黑板风格'],
+    ans: 3,
+    exp: '黑板架构适用于没有确定解题算法、不确定性高的问题，如语音识别、信号解释等专家系统场景。',
+    note: '出自笔记：考试提示' },
+  { id: 3, subject: '综合知识', src: '第3集', times: 2,
+    q: '管道-过滤器风格与批处理风格的主要区别在于？',
+    opts: ['构件是否相互独立', '数据传递粒度（流式 vs 整体）', '是否支持并行处理', '是否存在中央控制构件'],
+    ans: 1,
+    exp: '批处理是数据整体传递，管道-过滤器是流式传递，这是二者的本质区别；两者都属于数据流风格。',
+    note: '出自笔记：知识卡片 → 数据流风格' },
+  { id: 4, subject: '案例分析', src: '质量属性', times: 2,
+    q: '质量属性场景的六个要素分别是什么？',
+    opts: ['刺激源、刺激、环境、制品、响应、响应度量', '输入、处理、输出、反馈、控制、边界', '参与者、用例、系统、接口、约束、质量', '可用性、性能、安全、可测试、易用、可修改'],
+    ans: 0,
+    exp: '质量属性场景六要素：刺激源（产生刺激的来源）、刺激（到达的事件）、环境（刺激发生时的情境）、制品（被刺激的对象）、响应（刺激到达后系统的处理）、响应度量（对响应的衡量）。',
+    note: '出自笔记：案例分析 → 质量属性场景' }
+];
+let redoQueue = [], redoPos = 0, redoRight = 0, redoWrongCnt = 0;
+
+function redoWrong(id) {
+  redoQueue = [id]; redoPos = 0; redoRight = 0; redoWrongCnt = 0;
+  openModal('redoOverlay'); renderRedo();
+}
+function startWrongRedo() {
+  redoQueue = wrongQuestions.map(w => w.id); redoPos = 0; redoRight = 0; redoWrongCnt = 0;
+  openModal('redoOverlay'); renderRedo();
+}
+function renderRedo() {
+  document.getElementById('redoQuiz').style.display = '';
+  document.getElementById('redoSummary').style.display = 'none';
+  const w = wrongQuestions.find(x => x.id === redoQueue[redoPos]);
+  document.getElementById('redoSub').textContent = (redoQueue.length > 1 ? '第 ' + (redoPos + 1) + ' / ' + redoQueue.length + ' 题 · ' : '') + w.subject + ' · ' + w.src + ' · 错 ' + w.times + ' 次';
+  document.getElementById('redoTags').innerHTML = '<span class="quiz-tag" style="background:var(--red-light);color:var(--red);">错题重做</span><span class="quiz-tag subject">' + w.subject + '</span><span class="quiz-tag type">单选题</span>';
+  document.getElementById('redoQuestion').textContent = w.q;
+  document.getElementById('redoOptions').innerHTML = w.opts.map((o, i) =>
+    '<div class="quiz-option" onclick="redoAnswer(this,' + i + ')"><div class="opt-label">' + 'ABCD'[i] + '</div><span>' + o + '</span></div>').join('');
+  document.getElementById('redoExplanation').classList.remove('show');
+  document.getElementById('redoFoot').innerHTML = '<span style="margin-right:auto;font-size:12.5px;color:var(--muted-light);">选择答案后查看解析与掌握判定</span>';
+}
+function redoAnswer(el, chosen) {
+  const w = wrongQuestions.find(x => x.id === redoQueue[redoPos]);
+  const opts = [...document.querySelectorAll('#redoOptions .quiz-option')];
+  opts.forEach(o => o.classList.add('disabled'));
+  const correct = chosen === w.ans;
+  el.classList.add(correct ? 'correct' : 'wrong');
+  opts[w.ans].classList.add('correct');
+  const ex = document.getElementById('redoExplanation');
+  ex.innerHTML = '<div class="exp-label" style="color:var(--' + (correct ? 'green' : 'red') + ');">' + (correct ? '✓ 答对了 · 解析' : '✕ 又答错了 · 解析') + '</div>' + w.exp + '<div class="exp-src">' + w.note + '</div>';
+  ex.style.borderLeftColor = correct ? 'var(--green)' : 'var(--red)';
+  ex.classList.add('show');
+  if (correct) { redoRight++; markMastered(w.id); toast('答对了，已移出错题本'); }
+  else { redoWrongCnt++; toast('又答错了，保留在错题本'); }
+  const last = redoPos >= redoQueue.length - 1;
+  document.getElementById('redoFoot').innerHTML =
+    '<span style="margin-right:auto;font-size:13px;font-weight:700;color:var(--' + (correct ? 'green' : 'red') + ');">' + (correct ? '✓ 已掌握' : '✕ 未掌握') + '</span>'
+    + '<button class="btn btn-ghost" onclick="closeModal(\'redoOverlay\')">退出重做</button>'
+    + '<button class="btn btn-primary" onclick="redoNext()">' + (last ? '完成' : '下一题 →') + '</button>';
+}
+function redoNext() {
+  if (redoPos >= redoQueue.length - 1) {
+    document.getElementById('redoQuiz').style.display = 'none';
+    document.getElementById('redoSummary').style.display = '';
+    document.getElementById('redoSummaryText').textContent = '共 ' + redoQueue.length + ' 题：答对 ' + redoRight + ' 题，答错 ' + redoWrongCnt + ' 题' + (redoRight > 0 ? '，其中 ' + redoRight + ' 题已移出错题本' : '');
+    document.getElementById('redoFoot').innerHTML = '<button class="btn btn-primary" onclick="closeModal(\'redoOverlay\')">好的</button>';
+    return;
+  }
+  redoPos++; renderRedo();
+}
+function markMastered(id) {
+  const item = document.getElementById('wrongItem' + id);
+  if (item && !item.classList.contains('mastered')) {
+    item.classList.add('mastered');
+    item.querySelector('.wrong-icon').textContent = '✓';
+    item.querySelector('.wrong-count').textContent = '已掌握';
+    const m = document.getElementById('statMastered');
+    m.textContent = +m.textContent + 1;
+  }
+}
+function filterWrong(el, desc) {
+  el.parentElement.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  toast('已筛选：' + desc);
+}
+
+/* ========== Assembly ========== */
+let filled = false;
+function togglePool(el) {
+  el.classList.toggle('checked');
+  el.closest('.pool-item').classList.toggle('added');
+  updateCart();
+}
+function updateCart() {
+  filled = false;
+  const checked = document.querySelectorAll('.pool-checkbox.checked').length;
+  document.getElementById('selectedCount').textContent = checked;
+  document.getElementById('cartProgress').style.width = Math.min(checked / 75 * 100, 100) + '%';
+}
+function setCartStats(star, wrong, comp, cs) {
+  document.getElementById('csStar').textContent = star;
+  document.getElementById('csWrong').textContent = wrong;
+  document.getElementById('csComp').textContent = comp;
+  document.getElementById('csCase').textContent = cs;
+}
+function autoFill() {
+  if (filled) { toast('已经是 75 题，无需补齐'); return; }
+  document.querySelectorAll('.pool-checkbox').forEach(c => { c.classList.add('checked'); c.closest('.pool-item').classList.add('added'); });
+  filled = true;
+  document.getElementById('selectedCount').textContent = 75;
+  document.getElementById('cartProgress').style.width = '100%';
+  setCartStats(41, 23, 60, 15);
+  toast('已按「★考点优先 + 错题优先」策略补齐至 75 题');
+}
+function previewPaper() {
+  const items = [...document.querySelectorAll('.pool-item')].filter(it => it.querySelector('.pool-checkbox.checked'));
+  const n = items.length;
+  let html = '<div class="pv-stats">'
+    + '<span class="pv-stat"><b>' + document.getElementById('csComp').textContent + '</b>综合知识</span>'
+    + '<span class="pv-stat"><b>' + document.getElementById('csCase').textContent + '</b>案例分析</span>'
+    + '<span class="pv-stat"><b>' + document.getElementById('csStar').textContent + '</b>★ 考点</span>'
+    + '<span class="pv-stat"><b>' + document.getElementById('csWrong').textContent + '</b>含错题</span>'
+    + '</div>';
+  items.forEach((it, i) => {
+    const q = it.querySelector('.pool-question').textContent;
+    const tags = [...it.querySelectorAll('.meta-tag')].map(t => '<span class="meta-tag ' + [...t.classList].filter(c => c !== 'meta-tag').join(' ') + '">' + t.textContent + '</span>').join('');
+    html += '<div class="pv-row"><div class="pv-num">' + (i + 1) + '</div><div class="pv-q">' + q + '<div class="pv-tags">' + tags + '</div></div></div>';
+  });
+  if (n === 0) html += '<div class="pv-more">还没有选择任何题目，请先在左侧勾选题目或使用「自动补齐」</div>';
+  else if (filled) html += '<div class="pv-more">… 预览显示前 ' + n + ' 题，共 75 题</div>';
+  else html += '<div class="pv-more">… 当前已选 ' + n + ' 题，还差 ' + (75 - n) + ' 题</div>';
+  html += filled
+    ? '<div class="pv-hint ok">✓ 共 75 题 · 组卷完成，可以开始模考</div>'
+    : '<div class="pv-hint">还差 ' + (75 - n) + ' 题 · 可使用「自动补齐」按 ★考点优先 + 错题优先 策略补足</div>';
+  document.getElementById('pvBody').innerHTML = html;
+  openModal('previewOverlay');
+}
+function chipToggle(el) {
+  el.classList.toggle('active');
+  toast('筛选已更新（演示）');
+}
+
+/* ========== Modal (generic) ========== */
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+let confirmCb = null;
+function showConfirm(title, text, okLabel, cb) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmText').innerHTML = text;
+  document.getElementById('confirmOkBtn').textContent = okLabel;
+  confirmCb = cb;
+  openModal('confirmOverlay');
+}
+function confirmOk() { closeModal('confirmOverlay'); if (confirmCb) confirmCb(); }
+
+/* ========== Mock exam ========== */
+const mockQuestions = [
+  { q: '在管道-过滤器架构风格中，以下哪项是其最显著的特征？', opts: ['构件间通过共享变量进行通信', '数据以流的方式在过滤器间传递，支持并行处理', '通过事件发布和订阅实现构件解耦', '使用中央黑板共享数据并由控制器调度'], ans: 1 },
+  { q: '在黑板架构中，控制器的核心职责是什么？', opts: ['管理黑板上的数据读写', '监测黑板变化并调度知识源激活', '封装核心业务逻辑', '处理与外部系统的交互'], ans: 1 },
+  { q: '以下哪种架构风格最适合处理不确定性高的问题求解？', opts: ['管道-过滤器风格', '层次结构风格', '事件驱动风格', '黑板风格'], ans: 3 },
+  { q: '层次结构架构风格的最大优点是什么？', opts: ['可扩展性与可移植性', '运行性能最优', '安全性最高', '部署最简便'], ans: 0 },
+  { q: '管道-过滤器风格与批处理风格的主要区别在于？', opts: ['构件是否相互独立', '数据传递粒度（流式 vs 整体）', '是否支持并行处理', '是否存在中央控制构件'], ans: 1 }
+];
+let mockIdx = 1, mockAnswers = {}, mockTimerId = null, mockRemain = 9000;
+
+function askStartMock() {
+  showConfirm('开始模考',
+    '<b>架构师模拟卷 #1</b><br><br>'
+    + '· 共 75 道单选题，每题 1 分，满分 75 分<br>'
+    + '· 限时 150 分钟，倒计时结束自动交卷<br>'
+    + '· 可通过右侧答题卡跳题、标记题目，随时交卷<br>'
+    + '· 交卷后自动判分，错题将进入错题本',
+    '开始考试', startMock);
+}
+function startMock() { switchView('mock'); resetMock(); }
+function resetMock() {
+  mockIdx = 1; mockAnswers = {}; mockRemain = 150 * 60;
+  renderMockQ(); renderSheet(); renderTimer(); startMockTimer();
+}
+function renderMockQ() {
+  const n = mockIdx, q = mockQuestions[n - 1];
+  document.getElementById('mockTags').innerHTML =
+    '<span class="quiz-tag type">第 ' + n + ' / 75 题</span>'
+    + '<span class="quiz-tag subject">综合知识</span>'
+    + '<span class="quiz-tag type">单选题</span>';
+  document.getElementById('mockQuestion').textContent = q ? q.q
+    : '第 ' + n + ' 题（演示占位题：实际产品中此处为组卷生成的第 ' + n + ' 题，题干与选项来自题库）';
+  const opts = q ? q.opts : ['选项 A（演示占位）', '选项 B（演示占位）', '选项 C（演示占位）', '选项 D（演示占位）'];
+  document.getElementById('mockOptions').innerHTML = opts.map((o, i) =>
+    '<div class="quiz-option' + (mockAnswers[n] === i ? ' selected' : '') + '" onclick="selectMockOption(this,' + n + ',' + i + ')">'
+    + '<div class="opt-label">' + 'ABCD'[i] + '</div><span>' + o + '</span></div>').join('');
+}
+function selectMockOption(el, n, i) {
+  el.parentElement.querySelectorAll('.quiz-option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  mockAnswers[n] = i;
+  renderSheet();
+}
+function mockPrev() { if (mockIdx <= 1) { toast('已经是第 1 题'); return; } mockIdx--; renderMockQ(); renderSheet(); }
+function mockNext() { if (mockIdx >= 75) { toast('已经是最后一题，可以交卷了'); return; } mockIdx++; renderMockQ(); renderSheet(); }
+function gotoMock(n) { mockIdx = n; renderMockQ(); renderSheet(); }
+function renderSheet() {
+  let html = '';
+  for (let i = 1; i <= 75; i++) {
+    const cls = ['sheet-cell'];
+    if (mockAnswers[i] !== undefined) cls.push('answered');
+    if (i === mockIdx) cls.push('current');
+    html += '<div class="' + cls.join(' ') + '" onclick="gotoMock(' + i + ')">' + i + '</div>';
+  }
+  document.getElementById('sheetGrid').innerHTML = html;
+  document.getElementById('sheetStat').textContent = '已答 ' + Object.keys(mockAnswers).length + ' / 75';
+}
+function pad2(x) { return String(x).padStart(2, '0'); }
+function renderTimer() {
+  const h = Math.floor(mockRemain / 3600), m = Math.floor(mockRemain % 3600 / 60), s = mockRemain % 60;
+  document.getElementById('mockTimer').textContent = '⏱ ' + pad2(h) + ':' + pad2(m) + ':' + pad2(s);
+}
+function startMockTimer() {
+  stopMockTimer();
+  mockTimerId = setInterval(() => {
+    mockRemain--;
+    if (mockRemain <= 0) { mockRemain = 0; renderTimer(); toast('考试时间到，自动交卷'); submitMock(); return; }
+    renderTimer();
+  }, 1000);
+}
+function stopMockTimer() { if (mockTimerId) { clearInterval(mockTimerId); mockTimerId = null; } }
+function askSubmitMock() {
+  const unanswered = 75 - Object.keys(mockAnswers).length;
+  if (unanswered > 0) showConfirm('交卷确认', '还有 <b style="color:var(--red)">' + unanswered + '</b> 题未作答，确定要交卷吗？', '仍要交卷', submitMock);
+  else submitMock();
+}
+function submitMock() {
+  stopMockTimer();
+  const answered = Object.keys(mockAnswers).length;
+  const correct = Math.round(answered * 0.78);
+  const wrong = answered - correct;
+  document.getElementById('resScore').textContent = correct;
+  document.getElementById('resRight').textContent = correct;
+  document.getElementById('resWrong').textContent = wrong;
+  document.getElementById('resSkip').textContent = 75 - answered;
+  const used = 150 * 60 - mockRemain;
+  document.getElementById('resSub').textContent = '正确率 ' + (answered ? Math.round(correct / answered * 100) : 0) + '% · 用时 '
+    + pad2(Math.floor(used / 3600)) + ':' + pad2(Math.floor(used % 3600 / 60)) + ':' + pad2(used % 60);
+  openModal('mockResultOverlay');
+}
+
+/* ========== Toast ========== */
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ========== Exam countdown ========== */
+let examDate = new Date('2026-11-07T09:00:00');
+function renderCountdown() {
+  const days = Math.max(0, Math.ceil((examDate - Date.now()) / 86400000));
+  document.getElementById('cdDays').textContent = days;
+  document.getElementById('cdChip').textContent = '⏳ 距离考试 ' + days + ' 天';
+}
+renderCountdown();
+updateEpProgress();
+
+/* ========== Auth page: login / register / exam goal ========== */
+let userName = '刘同学';
+let examGoal = '软考 · 系统架构设计师';
+let setupMode = 'create';
+
+function showRegister() {
+  document.getElementById('tabLogin').classList.remove('active');
+  document.getElementById('tabRegister').classList.add('active');
+  document.getElementById('loginPanel').style.display = 'none';
+  document.getElementById('registerPanel').style.display = '';
+}
+function showLogin() {
+  document.getElementById('tabRegister').classList.remove('active');
+  document.getElementById('tabLogin').classList.add('active');
+  document.getElementById('registerPanel').style.display = 'none';
+  document.getElementById('loginPanel').style.display = '';
+}
+function doRegister() {
+  const acc = document.getElementById('regAccount').value.trim();
+  const p1 = document.getElementById('regPassword').value;
+  const p2 = document.getElementById('regPassword2').value;
+  if (!acc) { toast('请输入账号'); return; }
+  if (p1.length < 6) { toast('密码至少 6 位'); return; }
+  if (p1 !== p2) { toast('两次输入的密码不一致'); return; }
+  toast('注册成功，请登录');
+  document.getElementById('loginAccount').value = acc;
+  document.getElementById('loginPassword').value = '';
+  showLogin();
+  setTimeout(() => document.getElementById('loginPassword').focus(), 80);
+}
+function doLogin() {
+  const acc = document.getElementById('loginAccount').value.trim();
+  const pwd = document.getElementById('loginPassword').value;
+  if (!acc) { toast('请输入账号'); return; }
+  if (!pwd) { toast('请输入密码'); return; }
+  userName = acc;
+  setupMode = 'create';
+  document.getElementById('authStep1').style.display = 'none';
+  document.getElementById('authStep2').style.display = '';
+  setTimeout(() => document.getElementById('authGoal').focus(), 80);
+}
+function backToLoginStep() {
+  document.getElementById('authStep2').style.display = 'none';
+  document.getElementById('authStep1').style.display = '';
+}
+function fmtDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function openSetup() {
+  setupMode = 'edit';
+  hideUserMenu();
+  document.getElementById('setupGoal').value = examGoal;
+  document.getElementById('setupDate').value = fmtDate(examDate);
+  openModal('setupOverlay');
+}
+function confirmSetup() {
+  const isCreate = setupMode === 'create';
+  const goal = document.getElementById(isCreate ? 'authGoal' : 'setupGoal').value.trim();
+  if (!goal) { toast('请手写填写你的考试目标'); return; }
+  const dateVal = document.getElementById(isCreate ? 'authDate' : 'setupDate').value || '2026-11-07';
+  examGoal = goal;
+  examDate = new Date(dateVal + 'T09:00:00');
+  document.getElementById('wsName').textContent = goal;
+  document.getElementById('cdDateText').textContent = dateVal + ' · ' + goal;
+  document.getElementById('userAvatar').textContent = userName.slice(0, 1);
+  document.getElementById('userName').textContent = userName;
+  renderCountdown();
+  if (isCreate) {
+    document.getElementById('authPage').style.display = 'none';
+    toast('已创建备考空间「' + goal + '」');
+    buildAgentConfig();
+    setTimeout(() => openModal('agentOverlay'), 700);
+  } else {
+    closeModal('setupOverlay');
+    toast('考试目标与日期已更新');
+  }
+}
+
+/* ========== User menu（再次入口） ========== */
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  document.getElementById('userMenu').classList.toggle('show');
+}
+function hideUserMenu() { document.getElementById('userMenu').classList.remove('show'); }
+document.addEventListener('click', e => { if (!e.target.closest('.sidebar-footer')) hideUserMenu(); });
+function reopenAgent() { hideUserMenu(); buildAgentConfig(); openModal('agentOverlay'); }
+function doLogout() {
+  hideUserMenu();
+  showConfirm('退出登录', '确定退出当前账号吗？退出后将回到登录页。', '退出', () => {
+    document.getElementById('authPage').style.display = 'flex';
+    backToLoginStep();
+    showLogin();
+    document.getElementById('loginPassword').value = '';
+  });
+}
+
+/* ========== Agent onboarding ========== */
+function buildAgentConfig() {
+  const token = 'usr_' + Math.random().toString(36).slice(2, 10);
+  document.getElementById('agentConfig').textContent =
+    '【超级学习助手 · Agent 接入凭证】\n'
+    + '请代我接入以下 MCP 服务并完成装配：\n'
+    + '  MCP 端点：https://mcp.xueban.example.com/mcp\n'
+    + '  用户凭证：' + token + '\n'
+    + '  绑定用户：' + userName + '（考试目标：' + examGoal + '）\n'
+    + '接入后，服务会自动下发：\n'
+    + '  · Skill：笔记生成 / 习题生成 / 复盘分析\n'
+    + '  · 提示词：备考场景专用提示词\n'
+    + '  · MCP 工具：读写目录、笔记、批注、习题，读取错题与答题事件\n'
+    + '装配完成后，请以我的名义与本系统交互（生成内容写入我的备考空间）。';
+}
+function copyAgentConfig() {
+  const text = document.getElementById('agentConfig').textContent;
+  const done = () => { toast('接入凭证已复制，发送给任意 Agent 即可完成接入'); closeModal('agentOverlay'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); }
+  catch (e) { toast('自动复制失败，请在弹框中手动全选复制'); }
+  document.body.removeChild(ta);
+}
+
+/* ========== Annotation (批注) ========== */
+let savedRange = null, currentAnno = null;
+
+document.addEventListener('mouseup', e => {
+  if (e.target.closest('#annoFab') || e.target.closest('.modal-overlay')) return;
+  setTimeout(checkSelection, 10);
+});
+function nodeEl(n) { return n ? (n.nodeType === 1 ? n : n.parentElement) : null; }
+function checkSelection() {
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+    const a = nodeEl(sel.anchorNode), f = nodeEl(sel.focusNode);
+    const bodyA = a && a.closest ? a.closest('#view-notes .note-body') : null;
+    const bodyF = f && f.closest ? f.closest('#view-notes .note-body') : null;
+    if (bodyA && bodyA === bodyF && sel.toString().trim().length >= 2) {
+      savedRange = sel.getRangeAt(0).cloneRange();
+      const rect = savedRange.getBoundingClientRect();
+      const fab = document.getElementById('annoFab');
+      fab.style.display = 'block';
+      fab.style.left = Math.max(70, Math.min(rect.left + rect.width / 2, window.innerWidth - 70)) + 'px';
+      fab.style.top = Math.max(52, rect.top - 44) + 'px';
+      return;
+    }
+  }
+  hideAnnoFab();
+}
+function hideAnnoFab() { document.getElementById('annoFab').style.display = 'none'; }
+document.querySelector('.content-area').addEventListener('scroll', hideAnnoFab);
+
+function annotateFromFab() { openAnnoModal(); }
+function annotateFromButton() {
+  if (!savedRange || !savedRange.toString().trim()) { toast('请先在正文中选中要批注的文字'); return; }
+  openAnnoModal();
+}
+function openAnnoModal() {
+  hideAnnoFab();
+  document.getElementById('annoQuote').textContent = '「' + savedRange.toString().trim() + '」';
+  document.getElementById('annoText').value = '';
+  openModal('annoModal');
+  setTimeout(() => document.getElementById('annoText').focus(), 80);
+}
+function saveAnnotation() {
+  const text = document.getElementById('annoText').value.trim();
+  if (!text) { toast('批注内容不能为空'); return; }
+  if (!savedRange) { closeModal('annoModal'); return; }
+  const span = document.createElement('span');
+  span.className = 'annotation-highlight mine';
+  try { savedRange.surroundContents(span); }
+  catch (err) {
+    span.textContent = savedRange.toString();
+    savedRange.deleteContents();
+    savedRange.insertNode(span);
+  }
+  const pop = document.createElement('span');
+  pop.className = 'annotation-popup';
+  pop.textContent = '📌 ' + text;
+  span.appendChild(pop);
+  closeModal('annoModal');
+  window.getSelection().removeAllRanges();
+  savedRange = null;
+  toast('批注已保存 · 点击批注可随时查看详情');
+}
+
+document.querySelector('.content-area').addEventListener('click', e => {
+  const anno = e.target.closest('.annotation-highlight');
+  if (anno) showAnnoDetail(anno);
+});
+function showAnnoDetail(anno) {
+  const clone = anno.cloneNode(true);
+  const pop = clone.querySelector('.annotation-popup');
+  const noteHtml = pop ? pop.innerHTML : '';
+  if (pop) pop.remove();
+  const quote = clone.textContent.trim();
+  const mine = anno.classList.contains('mine');
+  document.getElementById('annoDetailBody').innerHTML =
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">批注原文</div>'
+    + '<div style="background:var(--surface-2);border-left:3px solid var(--gold);padding:10px 14px;border-radius:0 8px 8px 0;font-size:13.5px;line-height:1.7;margin-bottom:15px;">' + quote + '</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">批注内容'
+    + '<span style="margin-left:8px;padding:1px 9px;border-radius:8px;font-weight:600;'
+    + (mine ? 'background:var(--accent-light);color:var(--accent-deep);">我的批注' : 'background:var(--gold-light);color:var(--gold);">AI 批注（老师强调 / 考点）')
+    + '</span></div>'
+    + '<div style="font-size:14px;line-height:1.8;">' + noteHtml + '</div>';
+  document.getElementById('annoDetailFoot').innerHTML = mine
+    ? '<button class="btn btn-ghost" onclick="deleteAnno()">🗑 删除批注</button><button class="btn btn-primary" onclick="closeModal(\'annoDetailOverlay\')">知道了</button>'
+    : '<button class="btn btn-ghost" onclick="closeModal(\'annoDetailOverlay\');toast(\'已发送给 Agent 请求解答（演示）\')">🤖 让 AI 解释</button><button class="btn btn-primary" onclick="closeModal(\'annoDetailOverlay\')">知道了</button>';
+  currentAnno = anno;
+  openModal('annoDetailOverlay');
+}
+function deleteAnno() {
+  if (!currentAnno) return;
+  const parent = currentAnno.parentNode;
+  [...currentAnno.childNodes].forEach(node => {
+    if (node.classList && node.classList.contains('annotation-popup')) return;
+    parent.insertBefore(node, currentAnno);
+  });
+  parent.removeChild(currentAnno);
+  parent.normalize();
+  currentAnno = null;
+  closeModal('annoDetailOverlay');
+  toast('批注已删除');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeAllDd();
+    hideAnnoFab();
+    hideUserMenu();
+    document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
+  }
+});
+</script>
+
+</body>
+</html>
