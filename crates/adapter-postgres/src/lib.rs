@@ -4,11 +4,18 @@
 //! 强制 user_id / workspace 归属条件（隔离第二道防线）；事件只追加不修改。
 //! 密码哈希 argon2id；凭证签发为随机 32 字节 Base62（usr_ 前缀）。
 
+mod codec;
+mod events;
 mod identity;
+mod practice;
 mod space;
 
+pub use events::PgEventStore;
 pub use identity::{
     Argon2PasswordHasher, PgTokenRepository, PgUserRepository, RandomCredentialIssuer,
+};
+pub use practice::{
+    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgWrongItemRepository,
 };
 pub use space::{PgAnnotationRepository, PgItemRepository, PgWorkspaceRepository};
 
