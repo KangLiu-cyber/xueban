@@ -5,10 +5,12 @@
 //! 密码哈希 argon2id；凭证签发为随机 32 字节 Base62（usr_ 前缀）。
 
 mod identity;
+mod space;
 
 pub use identity::{
     Argon2PasswordHasher, PgTokenRepository, PgUserRepository, RandomCredentialIssuer,
 };
+pub use space::{PgAnnotationRepository, PgItemRepository, PgWorkspaceRepository};
 
 use domain::error::{Error, Result};
 
