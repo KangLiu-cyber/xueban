@@ -167,7 +167,7 @@ create_workspace / create_item / write_item / read_item / list_items / get_event
 |:---|:---|
 | 后端 | Rust（Axum）+ PostgreSQL |
 | MCP Server | rmcp，与后端同服务 |
-| 前端 | Rust（Dioxus）编译 WASM，网页端 + Tauri Mac 端一套代码 |
+| 前端 | Rust（Leptos）编译 WASM，网页端 + Tauri Mac 端一套代码 |
 | 智能体 | TRAE 等任意 Agent，经 MCP / Skill 接入 |
 
 ## 十一、当前范围

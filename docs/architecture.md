@@ -144,35 +144,49 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 3. 被驱动适配器：`adapter-postgres` 用 SQLx 实现上述 trait。
 4. 驱动适配器：REST 的 `POST /api/quiz/answer` 把请求体映射为用例入参。若未来 Agent 也要判题，MCP 适配器调用同一个用例即可，规则零重复。
 
-### 5.4 Rust 工程结构
+### 5.4 工程结构
 
 ```
-src/
-├── Cargo.toml                    # workspace 定义
-├── crates/
-│   ├── domain/                   # 领域层：零框架依赖
+├── Cargo.toml                   # 后端 workspace 定义（members = crates/*，exclude = clients）
+├── crates/                      # 后端：六边形架构 + DDD
+│   ├── domain/                  # 领域层：零框架依赖
 │   │   └── src/
-│   │       ├── identity.rs       # User、Token、密码与凭证规则
-│   │       ├── space.rs          # Workspace、Item 树、Annotation
-│   │       ├── practice.rs       # Question、WrongItem、Paper、抽题/判分领域服务
-│   │       ├── event.rs          # Event、领域事件定义
-│   │       └── ports.rs          # 仓储端口 traits（输出端口）
-│   ├── application/              # 应用层：用例编排
+│   │       ├── identity.rs      # User、Token、密码与凭证规则
+│   │       ├── space.rs         # Workspace、Item 树、Annotation
+│   │       ├── practice.rs      # Question、WrongItem、Paper、抽题/判分领域服务
+│   │       ├── event.rs         # Event、领域事件定义
+│   │       └── ports.rs         # 仓储端口 traits（输出端口）
+│   ├── application/             # 应用层：用例编排
 │   │   └── src/
-│   │       ├── auth.rs           # Register / Login / Logout
-│   │       ├── space.rs          # ManageExamGoal / BrowseTree / Annotate
-│   │       ├── quiz.rs           # DrawQuestions / SubmitAnswer
-│   │       ├── wrong.rs          # ListWrong / RedoWrong / MarkMastered
-│   │       ├── paper.rs          # AssemblePaper / SubmitPaper
-│   │       └── agent.rs          # AgentBootstrap / ReadEvents / ReportStatus
-│   ├── adapter-http/             # 驱动适配器：Axum REST API（/api/v1）
-│   ├── adapter-mcp/              # 驱动适配器：MCP 网关 + 能力下发
-│   ├── adapter-postgres/         # 被驱动适配器：SQLx 仓储与事件存储实现
-│   └── bootstrap/                # 组装：依赖注入、配置、迁移、main
-└── migrations/                   # SQL 迁移脚本
+│   │       ├── auth.rs          # Register / Login / Logout
+│   │       ├── space.rs         # ManageExamGoal / BrowseTree / Annotate
+│   │       ├── quiz.rs          # DrawQuestions / SubmitAnswer
+│   │       ├── wrong.rs         # ListWrong / RedoWrong / MarkMastered
+│   │       ├── paper.rs         # AssemblePaper / SubmitPaper
+│   │       └── agent.rs         # AgentBootstrap / ReadEvents / ReportStatus
+│   ├── adapter-http/            # 驱动适配器：Axum REST API（/api/v1）
+│   ├── adapter-mcp/             # 驱动适配器：MCP 网关 + 能力下发
+│   ├── adapter-postgres/        # 被驱动适配器：SQLx 仓储与事件存储实现
+│   └── bootstrap/               # 组装：依赖注入、配置、迁移、main
+├── clients/                     # 客户端：独立 workspace（被后端 exclude）
+│   ├── Cargo.toml               # 前端 workspace 定义（members = web, desktop）
+│   ├── web/                     # Leptos 应用（lib crate，编译 WASM）
+│   │   └── src/
+│   │       ├── lib.rs           # 应用根组件与路由
+│   │       ├── api.rs           # 后端 /api/v1 客户端封装
+│   │       ├── pages/           # 页面：登录、空间树、刷题、错题本、组卷、复盘
+│   │       └── components/      # 通用组件
+│   ├── desktop/                 # Tauri 壳（bin crate，依赖 web）
+│   │   └── src/main.rs          # tauri::Builder 启动，加载 web 构建产物
+│   └── android/                 # 安卓端：Kotlin + Jetpack Compose
+│       └── app/                 # 主应用模块（Material 3，WindowSizeClass 折叠屏适配）
+├── migrations/                  # SQL 迁移脚本
+└── docs/                        # 架构 / 需求文档与 UI 原型
 ```
 
 依赖方向：`bootstrap → adapter-* → application → domain`；`domain` 不依赖 workspace 内任何其他 crate。CI 中用 cargo deny / 依赖检查守住 domain 的纯净边界。
+
+前端：UI 代码只有一份（`web`），编译 WASM 供浏览器直接运行，Tauri 壳加载同一构建产物，`desktop → web` 建立链接；`clients/` 独立 workspace，避免 wasm target 与 Tauri 原生依赖拖累后端编译循环。安卓端（Kotlin）与 Rust 前端独立，仅共用后端 API。
 
 ## 六、领域模型要点
 

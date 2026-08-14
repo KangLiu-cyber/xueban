@@ -3,5 +3,25 @@
 version = 4
 
 [[package]]
-name = "xueban"
+name = "adapter-http"
+version = "0.1.0"
+
+[[package]]
+name = "adapter-mcp"
+version = "0.1.0"
+
+[[package]]
+name = "adapter-postgres"
+version = "0.1.0"
+
+[[package]]
+name = "application"
+version = "0.1.0"
+
+[[package]]
+name = "bootstrap"
+version = "0.1.0"
+
+[[package]]
+name = "domain"
 version = "0.1.0"
