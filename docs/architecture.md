@@ -340,7 +340,8 @@ events (
 | 认证 | `POST /api/auth/login` | Login |
 | 认证 | `POST /api/auth/logout` | Logout |
 | 空间 | `GET /api/workspaces` | BrowseTree（空间列表） |
-| 空间 | `PUT /api/workspaces/:id` | ManageExamGoal |
+| 空间 | `POST /api/workspaces` | ManageExamGoal（创建空间） |
+| 空间 | `PUT /api/workspaces/:id` | ManageExamGoal（更新目标/日期） |
 | 内容 | `GET /api/workspaces/:id/tree` | BrowseTree |
 | 内容 | `GET /api/items/:id` | ReadNote |
 | 批注 | `POST /api/items/:id/annotations` | Annotate |
@@ -354,6 +355,11 @@ events (
 | 组卷 | `POST /api/papers/:id/submit` | SubmitPaper |
 | Agent | `GET /api/agent/credential` | 读取接入凭证文案 |
 | Agent | `POST /api/agent/credential/rotate` | 换发 token |
+
+作答与答案的 JSON 格式约定（`questions.answer`、`quiz_records.chosen`、REST 请求/响应共用）：
+
+- `single`：选项索引数字，如 `1`；`multi`：索引数组，如 `[0, 2]`；`judge`：布尔，如 `true`。
+- 抽题响应（DrawQuestions）不携带答案与解析，防客户端作弊；提交作答后服务端返回判定、正确答案与解析。
 
 ### 8.2 MCP 适配器（Agent 侧）
 
