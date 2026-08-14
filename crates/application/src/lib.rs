@@ -5,7 +5,9 @@
 
 pub mod agent;
 pub mod auth;
+pub mod quiz;
 pub mod space;
+pub mod wrong;
 
 #[cfg(test)]
 pub mod inmem;
