@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 
 /// 题型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QuestionType {
     Single,
@@ -30,7 +30,7 @@ impl QuestionType {
 ///
 /// 线格式遵循 docs/requirements.md §8.1：single → 数字（如 1），
 /// multi → 索引数组（如 [0,2]），judge → 布尔（如 true），故用 untagged。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum Answer {
     Single(usize),

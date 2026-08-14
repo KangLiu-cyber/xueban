@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Workspace {
     pub id: i64,
     pub user_id: i64,
@@ -26,7 +26,7 @@ impl Workspace {
 }
 
 /// 内容节点类型：目录或笔记。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemKind {
     Dir,
@@ -43,14 +43,14 @@ impl ItemKind {
 }
 
 /// 内容创建者：Agent 生成的内容打 ai 来源标记，供客户端展示。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Creator {
     Agent,
     User,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Item {
     pub id: i64,
     pub workspace_id: i64,
@@ -76,7 +76,7 @@ impl Item {
 }
 
 /// 树形输出：仓储按递归查询组装，应用层/适配器直接返回。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ItemNode {
     pub item: Item,
     pub children: Vec<ItemNode>,
@@ -98,7 +98,7 @@ pub fn assert_no_cycle(new_parent: Option<i64>, item_id: i64, ancestors: &[i64])
 }
 
 /// 批注作者：AI 批注不可被用户修改只能删除；用户批注可编辑删除。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AnnotationAuthor {
     Ai,
@@ -114,7 +114,7 @@ impl AnnotationAuthor {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Annotation {
     pub id: i64,
     pub item_id: i64,
