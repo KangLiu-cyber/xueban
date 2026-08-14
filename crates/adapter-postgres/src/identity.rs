@@ -127,6 +127,25 @@ impl TokenRepository for PgTokenRepository {
         .transpose()
     }
 
+    async fn find_active_by_user_purpose(
+        &self,
+        user_id: i64,
+        purpose: TokenPurpose,
+    ) -> Result<Option<Token>> {
+        sqlx::query(
+            "select id, user_id, token, purpose, revoked_at
+             from tokens where user_id = $1 and purpose = $2 and revoked_at is null
+             order by id desc limit 1",
+        )
+        .bind(user_id)
+        .bind(purpose.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?
+        .map(|row| token_from_row(&row))
+        .transpose()
+    }
+
     async fn revoke(&self, token: &str, now: DateTime<Utc>) -> Result<()> {
         sqlx::query(
             "update tokens set revoked_at = $2

@@ -109,6 +109,14 @@ where
             .ok_or_else(|| Error::NotFound("用户不存在".to_owned()))
     }
 
+    /// 读取现行 Agent 凭证（GET /agent/credential 用，不换发）。
+    pub async fn agent_credential(&self, user_id: i64) -> Result<Token> {
+        self.tokens
+            .find_active_by_user_purpose(user_id, TokenPurpose::Agent)
+            .await?
+            .ok_or_else(|| Error::NotFound("尚无 Agent 凭证，请先换发".to_owned()))
+    }
+
     /// 换发 Agent 凭证：吊销旧 agent token 后签发新 token。
     pub async fn rotate_agent_token(&self, user_id: i64) -> Result<Token> {
         self.tokens
@@ -234,6 +242,24 @@ mod tests {
             s.authenticate("usr_nonexistent").await,
             Err(Error::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn agent_credential_reads_active_without_rotate() {
+        let s = svc();
+        let (user, _) = s.register("alice", "password1", None).await.unwrap();
+        // 未换发过时读不到。
+        assert!(matches!(
+            s.agent_credential(user.id).await,
+            Err(Error::NotFound(_))
+        ));
+        let issued = s.rotate_agent_token(user.id).await.unwrap();
+        let read = s.agent_credential(user.id).await.unwrap();
+        assert_eq!(read.id, issued.id);
+        assert_eq!(read.token, issued.token);
+        // 再换发后读到的是新凭证。
+        let second = s.rotate_agent_token(user.id).await.unwrap();
+        assert_eq!(s.agent_credential(user.id).await.unwrap().id, second.id);
     }
 
     #[tokio::test]

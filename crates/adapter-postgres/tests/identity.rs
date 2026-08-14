@@ -165,6 +165,85 @@ async fn token_lifecycle_revoke_and_purpose_revoke() {
 }
 
 #[tokio::test]
+async fn token_find_active_by_user_purpose_returns_latest_active_only() {
+    let Some(pool) = pool().await else {
+        return;
+    };
+    setup(&pool).await;
+    let user_repo = PgUserRepository::new(pool.clone());
+    let user_id = insert_user(&user_repo, "active").await;
+    let repo = PgTokenRepository::new(pool);
+
+    // 未签发时查不到。
+    assert!(
+        repo.find_active_by_user_purpose(user_id, TokenPurpose::Agent)
+            .await
+            .expect("查询失败")
+            .is_none()
+    );
+
+    let agent1 = Token {
+        id: 0,
+        user_id,
+        token: format!("usr_agent1_{}", stamp()),
+        purpose: TokenPurpose::Agent,
+        revoked_at: None,
+    };
+    let agent2 = Token {
+        id: 0,
+        user_id,
+        token: format!("usr_agent2_{}", stamp()),
+        purpose: TokenPurpose::Agent,
+        revoked_at: None,
+    };
+    let client = Token {
+        id: 0,
+        user_id,
+        token: format!("usr_client_{}", stamp()),
+        purpose: TokenPurpose::Client,
+        revoked_at: None,
+    };
+    repo.insert(&agent1).await.expect("插入失败");
+    repo.insert(&agent2).await.expect("插入失败");
+    repo.insert(&client).await.expect("插入失败");
+
+    // 取最新一条（agent2），client 用途互不干扰。
+    let found = repo
+        .find_active_by_user_purpose(user_id, TokenPurpose::Agent)
+        .await
+        .expect("查询失败")
+        .expect("应找到");
+    assert_eq!(found.token, agent2.token);
+
+    // 吊销最新后回退到上一代；全吊销后查不到。
+    repo.revoke(&agent2.token, Utc::now())
+        .await
+        .expect("吊销失败");
+    let prev = repo
+        .find_active_by_user_purpose(user_id, TokenPurpose::Agent)
+        .await
+        .expect("查询失败")
+        .expect("应找到");
+    assert_eq!(prev.token, agent1.token);
+    repo.revoke(&agent1.token, Utc::now())
+        .await
+        .expect("吊销失败");
+    assert!(
+        repo.find_active_by_user_purpose(user_id, TokenPurpose::Agent)
+            .await
+            .expect("查询失败")
+            .is_none()
+    );
+    // client 用途仍可取到自己的现行凭证。
+    assert!(
+        repo.find_active_by_user_purpose(user_id, TokenPurpose::Client)
+            .await
+            .expect("查询失败")
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn argon2_hash_and_verify_against_db() {
     let Some(pool) = pool().await else {
         return;

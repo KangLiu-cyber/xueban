@@ -29,6 +29,12 @@ pub trait TokenRepository {
     async fn insert(&self, token: &Token) -> Result<i64>;
     /// 按凭证查 token（含已吊销的，由调用方判断状态）。
     async fn find_by_token(&self, token: &str) -> Result<Option<Token>>;
+    /// 查用户某用途的现行凭证（未吊销，取最新一条）。
+    async fn find_active_by_user_purpose(
+        &self,
+        user_id: i64,
+        purpose: TokenPurpose,
+    ) -> Result<Option<Token>>;
     /// 吊销单个 token。
     async fn revoke(&self, token: &str, now: DateTime<Utc>) -> Result<()>;
     /// 吊销某用户某用途的全部 token（凭证换发/注销时用）。

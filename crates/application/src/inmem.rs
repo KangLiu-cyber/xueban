@@ -111,6 +111,21 @@ impl TokenRepository for InMemoryTokenRepository {
         }
         Ok(())
     }
+
+    async fn find_active_by_user_purpose(
+        &self,
+        user_id: i64,
+        purpose: TokenPurpose,
+    ) -> domain::Result<Option<Token>> {
+        Ok(self
+            .tokens
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|t| t.user_id == user_id && t.purpose == purpose && t.revoked_at.is_none())
+            .max_by_key(|t| t.id)
+            .cloned())
+    }
 }
 
 #[derive(Default)]

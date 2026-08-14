@@ -27,7 +27,11 @@ impl QuestionType {
 }
 
 /// 题目标准答案（类型化；adapter 层负责与 jsonb 互转）。
+///
+/// 线格式遵循 docs/requirements.md §8.1：single → 数字（如 1），
+/// multi → 索引数组（如 [0,2]），judge → 布尔（如 true），故用 untagged。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Answer {
     Single(usize),
     Multi(BTreeSet<usize>),
@@ -35,7 +39,10 @@ pub enum Answer {
 }
 
 /// 用户作答（类型化；REST 入参由 adapter 解析为 Chosen）。
+///
+/// 线格式与 Answer 相同（§8.1），untagged 保证作答请求体与判分序列化一致。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Chosen {
     Single(usize),
     Multi(BTreeSet<usize>),
