@@ -3,6 +3,10 @@
 //! 组卷是"筛选条件 + 题目快照"：抽题后 `question_ids` 冻结；
 //! 抽题不足 count 时按规则补齐（先放宽题型，再放宽来源，去重）。
 //! 交卷判分逐题调用领域纯函数，答错回流错题本并落 wrong 事件。
+//!
+//! 试卷对外以 `PaperBundle` 返回：正文携带冻结题目的 `QuestionBrief`
+//! （不含答案与解析，防作弊，见 requirements.md §8.1）——客户端
+//! 渲染"预览试卷 / 开始模考"直接用它，无需按题号回查。
 
 use std::sync::Arc;
 
@@ -16,11 +20,20 @@ use domain::ports::{
 use domain::practice::{Chosen, Paper, PaperConfig, PaperResult, Question};
 use serde::{Deserialize, Serialize};
 
+use crate::quiz::QuestionBrief;
+
 /// 交卷入参：题号 → 所选答案。缺答的题按答错计。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PaperAnswer {
     pub question_id: i64,
     pub chosen: Chosen,
+}
+
+/// 试卷响应：试卷本体（快照冻结的题号 + 交卷结果）+ 按冻结顺序的题目简述。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaperBundle {
+    pub paper: Paper,
+    pub questions: Vec<QuestionBrief>,
 }
 
 pub struct PaperService<W, I, Q, P, B, E>
@@ -68,13 +81,14 @@ where
     }
 
     /// AssemblePaper：校验归属 → 抽题（含补齐）→ 冻结快照。
+    /// 返回带题目简述的 `PaperBundle`，简述顺序即冻结的答题顺序。
     pub async fn assemble(
         &self,
         user_id: i64,
         workspace_id: i64,
         name: Option<String>,
         config: PaperConfig,
-    ) -> Result<Paper> {
+    ) -> Result<PaperBundle> {
         self.workspaces
             .find_by_id_and_user(workspace_id, user_id)
             .await?
@@ -114,7 +128,7 @@ where
                 .await?;
             push_unique(&mut drawn, extra);
         }
-        let question_ids: Vec<i64> = drawn.into_iter().map(|q| q.id).collect();
+        let question_ids: Vec<i64> = drawn.iter().map(|q| q.id).collect();
         let paper = Paper {
             id: 0,
             user_id,
@@ -128,11 +142,25 @@ where
         let id = self.papers.insert(&paper).await?;
         let mut paper = paper;
         paper.id = id;
-        Ok(paper)
+        Ok(PaperBundle {
+            paper,
+            questions: drawn.into_iter().map(QuestionBrief::from).collect(),
+        })
     }
 
-    /// ReadPaper：读试卷（含题目快照与结果）。
-    pub async fn read(&self, user_id: i64, id: i64) -> Result<Paper> {
+    /// ReadPaper：读试卷正文（题目简述按冻结顺序回排）。
+    pub async fn read(&self, user_id: i64, id: i64) -> Result<PaperBundle> {
+        let paper = self.read_paper(user_id, id).await?;
+        let questions = self
+            .questions
+            .find_by_ids(&paper.question_ids, user_id)
+            .await?;
+        let questions = reorder_briefs(&questions, &paper.question_ids);
+        Ok(PaperBundle { paper, questions })
+    }
+
+    /// 只读试卷本体（交卷判分用，不重复取题）。
+    async fn read_paper(&self, user_id: i64, id: i64) -> Result<Paper> {
         self.papers
             .find_by_id_and_user(id, user_id)
             .await?
@@ -147,7 +175,7 @@ where
         answers: Vec<PaperAnswer>,
         duration_secs: u32,
     ) -> Result<PaperResult> {
-        let mut paper = self.read(user_id, paper_id).await?;
+        let mut paper = self.read_paper(user_id, paper_id).await?;
         if paper.result.is_some() {
             return Err(Error::Conflict("试卷已交卷".to_owned()));
         }
@@ -208,6 +236,18 @@ fn push_unique(drawn: &mut Vec<Question>, extra: Vec<Question>) {
             drawn.push(q);
         }
     }
+}
+
+/// 仓储按 id 升序返回题目，须按冻结的 `question_ids` 顺序回排。
+fn reorder_briefs(questions: &[Question], question_ids: &[i64]) -> Vec<QuestionBrief> {
+    let by_id: std::collections::HashMap<i64, &Question> =
+        questions.iter().map(|q| (q.id, q)).collect();
+    question_ids
+        .iter()
+        .filter_map(|id| by_id.get(id).copied())
+        .cloned()
+        .map(QuestionBrief::from)
+        .collect()
 }
 
 #[cfg(test)]
@@ -292,14 +332,20 @@ mod tests {
     #[tokio::test]
     async fn assemble_freezes_question_snapshot() {
         let c = ctx().await;
-        let p = c
+        let b = c
             .svc
             .assemble(1, c.ws_id, Some("模考一".into()), config(3))
             .await
             .unwrap();
+        let p = &b.paper;
         assert_eq!(p.question_ids.len(), 3);
         assert_eq!(p.question_ids, c.q_ids);
         assert!(p.result.is_none());
+        // 题目简述跟随冻结顺序且不含答案。
+        assert_eq!(
+            b.questions.iter().map(|q| q.id).collect::<Vec<_>>(),
+            c.q_ids
+        );
         // 题库变化不影响已组试卷快照。
         c.svc
             .questions
@@ -317,15 +363,16 @@ mod tests {
             .await
             .unwrap();
         let again = c.svc.read(1, p.id).await.unwrap();
-        assert_eq!(again.question_ids.len(), 3);
+        assert_eq!(again.paper.question_ids.len(), 3);
+        assert_eq!(again.questions.len(), 3);
     }
 
     #[tokio::test]
     async fn assemble_top_up_without_source_when_short() {
         let c = ctx().await;
         // count 超过题库总量 → 全部取到（不足不报错）。
-        let p = c.svc.assemble(1, c.ws_id, None, config(10)).await.unwrap();
-        assert_eq!(p.question_ids.len(), 3);
+        let b = c.svc.assemble(1, c.ws_id, None, config(10)).await.unwrap();
+        assert_eq!(b.paper.question_ids.len(), 3);
     }
 
     #[tokio::test]
@@ -337,6 +384,29 @@ mod tests {
             ..config(1)
         };
         assert!(c.svc.assemble(1, c.ws_id, None, bad).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn read_returns_questions_in_frozen_order() {
+        let c = ctx().await;
+        // 冻结顺序与 id 升序不同（反序），read 必须按冻结顺序回排。
+        let reversed: Vec<i64> = c.q_ids.iter().rev().copied().collect();
+        let paper = Paper {
+            id: 0,
+            user_id: 1,
+            workspace_id: c.ws_id,
+            name: None,
+            config: config(3),
+            question_ids: reversed.clone(),
+            result: None,
+            created_at: Utc::now(),
+        };
+        let id = c.svc.papers.insert(&paper).await.unwrap();
+        let b = c.svc.read(1, id).await.unwrap();
+        assert_eq!(
+            b.questions.iter().map(|q| q.id).collect::<Vec<_>>(),
+            reversed
+        );
     }
 
     #[tokio::test]
@@ -354,7 +424,7 @@ mod tests {
             },
             // q_ids[2] 缺答 → 计错
         ];
-        let r = c.svc.submit(1, p.id, answers, 300).await.unwrap();
+        let r = c.svc.submit(1, p.paper.id, answers, 300).await.unwrap();
         assert_eq!(r.correct, 1);
         assert_eq!(r.score, 1);
         assert_eq!(r.total, 3);
@@ -376,13 +446,13 @@ mod tests {
     async fn submit_rejects_second_time_and_other_user() {
         let c = ctx().await;
         let p = c.svc.assemble(1, c.ws_id, None, config(1)).await.unwrap();
-        c.svc.submit(1, p.id, vec![], 10).await.unwrap();
+        c.svc.submit(1, p.paper.id, vec![], 10).await.unwrap();
         assert!(matches!(
-            c.svc.submit(1, p.id, vec![], 10).await,
+            c.svc.submit(1, p.paper.id, vec![], 10).await,
             Err(Error::Conflict(_))
         ));
         assert!(matches!(
-            c.svc.submit(2, p.id, vec![], 10).await,
+            c.svc.submit(2, p.paper.id, vec![], 10).await,
             Err(Error::NotFound(_))
         ));
     }
