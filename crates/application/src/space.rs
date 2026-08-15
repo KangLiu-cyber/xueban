@@ -12,6 +12,9 @@ use domain::ports::{AnnotationRepository, EventStore, ItemRepository, WorkspaceR
 use domain::space::{Annotation, AnnotationAuthor, Creator, Item, ItemKind, ItemNode, Workspace};
 use serde::Serialize;
 
+/// 单 item 正文上限：512KB（架构文档 §10 输入校验）。
+pub const MAX_ITEM_CONTENT_BYTES: usize = 512 * 1024;
+
 pub struct SpaceService<W, I, A, E>
 where
     W: WorkspaceRepository + ?Sized,
@@ -185,6 +188,9 @@ where
                 return Err(Error::Invalid("父节点必须是目录".to_owned()));
             }
         }
+        if let Some(content) = &content {
+            Self::check_content_size(content)?;
+        }
         let now = Utc::now();
         let item = Item {
             id: 0,
@@ -209,6 +215,7 @@ where
         if item.is_dir() {
             return Err(Error::Invalid("目录没有正文".to_owned()));
         }
+        Self::check_content_size(&content)?;
         item.content = Some(content);
         item.updated_at = Utc::now();
         self.items.update(&item).await?;
@@ -286,6 +293,13 @@ where
     pub async fn list_annotations(&self, user_id: i64, item_id: i64) -> Result<Vec<Annotation>> {
         self.read_item(user_id, item_id).await?;
         self.annotations.list_by_item(item_id, user_id).await
+    }
+
+    fn check_content_size(content: &str) -> Result<()> {
+        if content.len() > MAX_ITEM_CONTENT_BYTES {
+            return Err(Error::Invalid("笔记正文超过 512KB 上限".to_owned()));
+        }
+        Ok(())
     }
 
     async fn log_agent_write(
@@ -449,6 +463,46 @@ mod tests {
             .await
             .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn create_and_write_reject_oversized_content() {
+        let s = svc();
+        let ws = s
+            .create_workspace(1, "备考".into(), "目标".into(), None)
+            .await
+            .unwrap();
+        let huge = "x".repeat(MAX_ITEM_CONTENT_BYTES + 1);
+        assert!(matches!(
+            s.create_item(
+                1,
+                ws.id,
+                None,
+                ItemKind::Note,
+                "大笔记".into(),
+                Some(huge.clone())
+            )
+            .await,
+            Err(Error::Invalid(_))
+        ));
+        // 正好 512KB 可通过。
+        let ok = "x".repeat(MAX_ITEM_CONTENT_BYTES);
+        let note = s
+            .create_item(
+                1,
+                ws.id,
+                None,
+                ItemKind::Note,
+                "边界".into(),
+                Some(ok.clone()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(note.content.as_deref(), Some(ok.as_str()));
+        assert!(matches!(
+            s.write_item(1, note.id, huge).await,
+            Err(Error::Invalid(_))
+        ));
     }
 
     #[tokio::test]
