@@ -7,6 +7,7 @@ pub mod event;
 pub mod identity;
 pub mod ports;
 pub mod practice;
+pub mod skill;
 pub mod space;
 
 pub use error::{Error, Result};

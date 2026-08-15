@@ -1,4 +1,4 @@
-//! MCP 网关工具实现（docs/architecture.md §8.2：10 个工具 + 强制规则）。
+//! MCP 网关工具实现（docs/architecture.md §8.2：11 个工具 + 强制规则）。
 //!
 //! 用户身份一律从请求扩展 `AuthUser`（auth.rs 中间件注入）读取——工具入参
 //! 中不存在用户身份字段（§10 数据隔离）。错误映射：Invalid/Conflict →
@@ -16,6 +16,7 @@ use domain::error::Error;
 use domain::event::{Event, EventAction};
 use domain::identity::User;
 use domain::practice::{Answer, QuestionType};
+use domain::skill::Skill;
 use domain::space::{Annotation, AnnotationAuthor, Creator, Item, ItemKind, ItemNode, Workspace};
 use rmcp::ErrorData;
 use rmcp::handler::server::common::Extension;
@@ -64,11 +65,13 @@ fn map_err(e: Error) -> ErrorData {
 
 #[tool_router]
 impl McpService {
-    /// AgentBootstrap：能力包下发（Skill + 备考提示词 + 工具清单 + 版本号）。
+    /// AgentBootstrap：能力包下发（Skill + 备考提示词 + 工具清单 + 内置
+    /// Skill 目录全量内容 + 版本号）。内置 skill 全量下发（含脚本），
+    /// Agent 首次接入即自动下载安装；之后可按名经 get_skill 重新拉取。
     #[tool(
         name = "bootstrap",
         title = "能力下发",
-        description = "获取 Agent 能力包：Skill、备考提示词、工具清单与版本号。连接后先调用本工具。"
+        description = "获取 Agent 能力包：Skill、备考提示词、工具清单、内置 Skill 目录（全量含脚本）与版本号。连接后先调用本工具。"
     )]
     async fn bootstrap(
         &self,
@@ -299,6 +302,27 @@ impl McpService {
             .map(Json)
             .map_err(map_err)
     }
+
+    /// GetSkill：按名拉取系统内置 skill 完整内容（含脚本），重新安装/更新用。
+    #[tool(
+        name = "get_skill",
+        title = "拉取内置 Skill",
+        description = "按名称拉取系统内置 skill 的完整内容（含脚本），用于重新安装或更新已安装的 skill。"
+    )]
+    async fn get_skill(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(input): Parameters<GetSkillInput>,
+    ) -> Result<Json<SkillDto>, ErrorData> {
+        let _user = self.user(&parts)?;
+        self.state
+            .agent
+            .get_skill(&input.name)
+            .await
+            .map(SkillDto::from)
+            .map(Json)
+            .map_err(map_err)
+    }
 }
 
 #[tool_handler]
@@ -521,7 +545,21 @@ pub struct AgentCapabilityDto {
     pub skill: String,
     pub prompt: String,
     pub tools: Vec<String>,
+    pub skills: Vec<SkillDto>,
     pub version: u32,
+}
+
+/// 内置 Skill：bootstrap 全量下发、get_skill 按名拉取，同一结构。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillDto {
+    pub name: String,
+    pub description: String,
+    pub script: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
+pub struct GetSkillInput {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -677,12 +715,23 @@ impl From<QuestionInputDto> for QuestionInput {
     }
 }
 
+impl From<Skill> for SkillDto {
+    fn from(v: Skill) -> Self {
+        Self {
+            name: v.name,
+            description: v.description,
+            script: v.script,
+        }
+    }
+}
+
 impl From<AgentCapability> for AgentCapabilityDto {
     fn from(v: AgentCapability) -> Self {
         Self {
             skill: v.skill,
             prompt: v.prompt,
             tools: v.tools,
+            skills: v.skills.into_iter().map(SkillDto::from).collect(),
             version: v.version,
         }
     }

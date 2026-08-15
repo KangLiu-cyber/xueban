@@ -154,6 +154,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── identity.rs      # User、Token、密码与凭证规则
 │   │       ├── space.rs         # Workspace、Item 树、Annotation
 │   │       ├── practice.rs      # Question、WrongItem、Paper、抽题/判分领域服务
+│   │       ├── skill.rs         # Skill（内置目录解析 skills/*.md）
 │   │       ├── event.rs         # Event、领域事件定义
 │   │       └── ports.rs         # 仓储端口 traits（输出端口）
 │   ├── application/             # 应用层：用例编排
@@ -163,10 +164,19 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── quiz.rs          # DrawQuestions / SubmitAnswer
 │   │       ├── wrong.rs         # ListWrong / RedoWrong / MarkMastered
 │   │       ├── paper.rs         # AssemblePaper / SubmitPaper
-│   │       └── agent.rs         # AgentBootstrap / ReadEvents / ReportStatus
+│   │       └── agent.rs         # AgentBootstrap / ReadEvents / ReportStatus / GetSkill
 │   ├── adapter-http/            # 驱动适配器：Axum REST API（/api/v1）
+│   │   └── src/
+│   │       ├── lib.rs           # 路由组装与中间件
+│   │       ├── agent.rs         # Agent 凭证端点
+│   │       ├── auth.rs          # 注册 / 登录 / 注销
+│   │       ├── middleware.rs    # require_auth + 限流
+│   │       └── ...              # space / quiz / wrong / paper 等端点
 │   ├── adapter-mcp/             # 驱动适配器：MCP 网关 + 能力下发
 │   ├── adapter-postgres/        # 被驱动适配器：SQLx 仓储与事件存储实现
+│   │   └── src/
+│   │       ├── lib.rs           # map_sqlx_error 与导出
+│   │       └── ...              # 其余 Pg*Repository 与 PgEventStore
 │   └── bootstrap/               # 组装：依赖注入、配置、迁移、main
 ├── clients/                     # 客户端：独立 workspace（被后端 exclude）
 │   ├── Cargo.toml               # 前端 workspace 定义（members = web, desktop）
@@ -371,7 +381,7 @@ MCP tool handler 与 REST handler 一样只做协议翻译，复用同一组用�
 
 | 工具 | 对应用例 |
 |:---|:---|
-| `bootstrap` | AgentBootstrap（返回 Skill 定义、备考提示词、工具清单） |
+| `bootstrap` | AgentBootstrap（返回备考提示词、工具清单、内置 Skill 目录全量内容 `skills`（含脚本）） |
 | `create_workspace` | ManageExamGoal（创建） |
 | `create_item` / `write_item` | BrowseTree / ReadNote 的写入侧（Agent 内容写入） |
 | `read_item` / `list_items` | BrowseTree / ReadNote |
@@ -379,13 +389,14 @@ MCP tool handler 与 REST handler 一样只做协议翻译，复用同一组用�
 | `save_questions` | SaveQuestions |
 | `get_events` | ReadEvents |
 | `report_status` | ReportStatus |
+| `get_skill` | GetSkill（按名拉取内置 skill 完整内容，含脚本，重新安装/更新用） |
 
 MCP 适配器的强制规则：
 
 - 每个请求先校验 token，解析出 user_id 注入用例上下文。
 - Agent 写入全部记入 events（action = agent_write），客户端可展示"由 AI 生成"的来源标注。
 - 单 token 限流（默认 60 次/分钟），防止异常 Agent 打满服务。
-- 能力包（Skill + 提示词 + 工具清单）按版本管理，服务端升级后 Agent 下次接入自动获取新版本，无需用户重新复制凭证。
+- 能力包（Skill + 提示词 + 工具清单 + 内置 Skill 目录）按版本管理，服务端升级后 Agent 下次接入自动获取新版本，无需用户重新复制凭证。内置 Skill 目录为全局共享资产：开发者把 skill 安装包（一个 `.md` 文件一个 skill，含名称、介绍与脚本）放进仓库根 `skills/` 文件夹，后端启动时自动加载解析（见 §5.4 `domain/src/skill.rs`）。`bootstrap` 全量下发全部 skill（含脚本），Agent 首次接入即自动下载安装；之后按名调 `get_skill` 重新拉取（更新/修复安装）。所有用户接入拿到同一份清单，无用户维度区分。
 
 ## 九、核心流程
 

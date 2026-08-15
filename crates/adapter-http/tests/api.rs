@@ -84,7 +84,13 @@ async fn app() -> Option<Router> {
         wrong_items,
         events.clone(),
     ));
-    let agent = Arc::new(AgentService::new(workspaces, items, questions, events));
+    let agent = Arc::new(AgentService::new(
+        workspaces,
+        items,
+        questions,
+        events,
+        Vec::new(),
+    ));
     Some(router(AppState::new(
         auth,
         space,

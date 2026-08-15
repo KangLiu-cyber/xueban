@@ -1,6 +1,6 @@
 //! MCP 网关适配器（docs/architecture.md §8.2）。
 //!
-//! 经 rmcp streamable-http 暴露 10 个工具（见 tools.rs）；/mcp 全路由挂
+//! 经 rmcp streamable-http 暴露 11 个工具（见 tools.rs）；/mcp 全路由挂
 //! `require_auth` 中间件：先按 token 限流（60/min）再校验 token，通过后
 //! 注入 `AuthUser`，工具从请求扩展取回用户上下文。用例服务由 bootstrap
 //! 预组装注入（P1-10：仓储实例化上移 bootstrap，本适配器只依赖

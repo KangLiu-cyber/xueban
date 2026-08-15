@@ -77,6 +77,12 @@ v7.1 变更：登录改为账号密码并支持注册（为订阅计费做准备
 3. Agent 凭该凭证**自动访问我们的服务**；服务校验凭证后，把**对应的 Skill、提示词、MCP 配置**返回给该 Agent。
 4. Agent 装配完成后，即可以**当前登录用户的名义**与系统交互：生成目录/笔记/批注/习题、读取错题与答题事件、发起复盘。
 
+### 4.1 内置 Skill 目录（新增）
+
+- Skill 是**开发者内置到系统中的资产**，不是用户上传的内容：开发者把 skill 安装包（一个 `.md` 文件一个 skill，含名称、介绍、脚本内容）放进仓库根 `skills/` 文件夹，后端启动时自动加载为 Skill 目录。
+- Agent **首次接入时 bootstrap 全量下发全部 skill（含脚本）**，Agent 自动下载并安装；之后可按名调 `get_skill` 重新拉取/更新。
+- Skill 目录为全局共享：所有用户接入拿到同一份清单，无用户维度区分。
+
 **安全与隔离（硬性要求）**
 - 每用户一个 token，服务端所有接口凭 token 识别用户。
 - Agent 的一切读写只作用于该 token 对应用户的数据，**不同用户之间严格隔离，不能串数据**。
@@ -159,9 +165,10 @@ Agent 读取事件 → 复盘诊断 → 生成补充内容写回系统
 
 bootstrap（能力下发）/ create_workspace / create_item / write_item / read_item /
 list_items（出参 `{items: [...]}`）/ add_annotation / save_questions（出参 `{ids: [...]}`）/
-get_events（出参 `{events: [...]}`）/ report_status。
+get_events（出参 `{events: [...]}`）/ report_status / get_skill。
 
-- Agent 持 token 接入时，服务端自动下发 Skill、提示词与 MCP 工具清单。
+- Agent 持 token 接入时，服务端自动下发 Skill、提示词、MCP 工具清单与**内置 Skill 目录全量内容**（`bootstrap` 出参 `skills: [{name, description, script}]`，含脚本，Agent 首次接入即自动安装；版本号随能力包升级）。
+- 内置 skill 可随时按名经 `get_skill` 重新拉取（更新/修复安装），入参 `{name}`，出参 `{name, description, script}`。
 - 所有接口按 token 识别用户，数据按用户隔离。
 - 工具出参根类型一律为 object（rmcp 要求）：数组统一包装在 `items` / `ids` / `events` 字段下。
 - 题目线格式（§8.1）：single 答案为数字索引（如 1），multi 为索引数组（如 [0,2]），judge 为布尔。

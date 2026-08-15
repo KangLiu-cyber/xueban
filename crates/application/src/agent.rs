@@ -1,7 +1,9 @@
-//! Agent 接入用例：AgentBootstrap / SaveQuestions / ReadEvents / ReportStatus。
+//! Agent 接入用例：AgentBootstrap / SaveQuestions / ReadEvents / ReportStatus / GetSkill。
 //!
 //! Agent 只经 MCP 接入：连接时 token 解析出 user_id 注入上下文，工具入参
 //! 不存在用户身份字段。能力包（Skill + 提示词 + 工具清单）按版本下发；
+//! 系统内置 Skill 目录（开发者放在 `skills/` 文件夹，启动时加载）随 bootstrap
+//! 全量下发，Agent 首次接入即自动下载安装；之后可按名经 get_skill 重新拉取。
 //! Agent 写入（save_questions）复用题目仓储，落 agent_write 事件供客户端溯源。
 
 use std::sync::Arc;
@@ -11,6 +13,7 @@ use domain::error::{Error, Result};
 use domain::event::{Event, EventAction};
 use domain::ports::{EventStore, ItemRepository, QuestionRepository, WorkspaceRepository};
 use domain::practice::{Answer, Question, QuestionType};
+use domain::skill::Skill;
 use domain::space::Workspace;
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +21,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_QUESTIONS_PER_BATCH: usize = 200;
 
 /// 能力包版本：服务端升级能力后递增，Agent 下次接入自动获取新版本。
-pub const CAPABILITY_VERSION: u32 = 1;
+pub const CAPABILITY_VERSION: u32 = 2;
 
 /// Agent 提交的题目入参（无 id/归属字段，归属由上下文与调用参数给定）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,12 +33,14 @@ pub struct QuestionInput {
     pub explanation: Option<String>,
 }
 
-/// AgentBootstrap 返回值：Skill 定义、备考提示词、工具清单。
+/// AgentBootstrap 返回值：Skill 定义、备考提示词、工具清单、内置 Skill 目录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentCapability {
     pub skill: String,
     pub prompt: String,
     pub tools: Vec<String>,
+    /// 系统内置 Skill 目录（全量下发，含脚本）：Agent 首次接入自动下载安装。
+    pub skills: Vec<Skill>,
     pub version: u32,
 }
 
@@ -48,7 +53,7 @@ pub struct AgentStatus {
 }
 
 /// MCP 工具清单（与 docs/architecture.md §8.2 对齐）。
-const TOOLS: [&str; 10] = [
+const TOOLS: [&str; 11] = [
     "bootstrap",
     "create_workspace",
     "create_item",
@@ -59,6 +64,7 @@ const TOOLS: [&str; 10] = [
     "save_questions",
     "get_events",
     "report_status",
+    "get_skill",
 ];
 
 pub struct AgentService<W, I, Q, E>
@@ -72,6 +78,8 @@ where
     items: Arc<I>,
     questions: Arc<Q>,
     events: Arc<E>,
+    /// 系统内置 Skill 目录：开发者维护，bootstrap 全量下发。
+    skills: Vec<Skill>,
 }
 
 impl<W, I, Q, E> AgentService<W, I, Q, E>
@@ -81,17 +89,25 @@ where
     Q: QuestionRepository + ?Sized,
     E: EventStore + ?Sized,
 {
-    pub fn new(workspaces: Arc<W>, items: Arc<I>, questions: Arc<Q>, events: Arc<E>) -> Self {
+    pub fn new(
+        workspaces: Arc<W>,
+        items: Arc<I>,
+        questions: Arc<Q>,
+        events: Arc<E>,
+        skills: Vec<Skill>,
+    ) -> Self {
         Self {
             workspaces,
             items,
             questions,
             events,
+            skills,
         }
     }
 
     /// AgentBootstrap：能力下发。提示词基于用户首个空间的考试目标定制；
-    /// 尚无空间时给出引导文案，能力本身始终可用。
+    /// 尚无空间时给出引导文案，能力本身始终可用。内置 Skill 目录全量下发
+    /// （含脚本），Agent 首次接入即自动下载安装。
     pub async fn bootstrap(&self, user_id: i64) -> Result<AgentCapability> {
         let goal = self
             .workspaces
@@ -103,7 +119,8 @@ where
         let prompt = match goal {
             Some(goal) if !goal.trim().is_empty() => format!(
                 "你是学伴备考助手，为用户的备考空间生成学习内容。\n用户考试目标：{goal}\n\
-                 请先 bootstrap 获取工具清单，再按用户指令生成目录、笔记与习题。"
+                 请先 bootstrap 获取能力包（含 Skill 目录），把 skills 全部安装后，\
+                 再按用户指令生成目录、笔记与习题。"
             ),
             _ => "你是学伴备考助手。用户尚未设置考试目标：请先引导创建备考空间 \
                   （create_workspace），再按指令生成内容。"
@@ -113,8 +130,18 @@ where
             skill: "xueban-study-assistant".to_owned(),
             prompt,
             tools: TOOLS.iter().map(|t| (*t).to_owned()).collect(),
+            skills: self.skills.clone(),
             version: CAPABILITY_VERSION,
         })
+    }
+
+    /// GetSkill：按名拉取单个 skill 完整内容（Agent 更新/重新安装用）。
+    pub async fn get_skill(&self, name: &str) -> Result<Skill> {
+        self.skills
+            .iter()
+            .find(|s| s.name == name)
+            .cloned()
+            .ok_or_else(|| Error::NotFound("skill 不存在".to_owned()))
     }
 
     /// SaveQuestions：批量写入习题（单批 ≤ 200），归属校验 + 笔记（集）约束，
@@ -246,6 +273,7 @@ mod tests {
             item_repo.clone(),
             Arc::new(InMemoryQuestionRepository::default()),
             Arc::new(InMemoryEventStore::default()),
+            Vec::new(),
         );
         Ctx {
             svc,
@@ -253,6 +281,21 @@ mod tests {
             item_id,
             item_repo,
         }
+    }
+
+    fn catalog() -> Vec<Skill> {
+        vec![
+            Skill {
+                name: "链接转笔记".into(),
+                description: "把链接内容整理成笔记".into(),
+                script: Some("步骤1：解析链接\n步骤2：生成框架笔记".into()),
+            },
+            Skill {
+                name: "习题生成".into(),
+                description: "基于笔记生成习题".into(),
+                script: None,
+            },
+        ]
     }
 
     fn input() -> QuestionInput {
@@ -271,8 +314,11 @@ mod tests {
         let cap = c.svc.bootstrap(1).await.unwrap();
         assert_eq!(cap.version, CAPABILITY_VERSION);
         assert!(cap.prompt.contains("软考架构师"));
-        assert_eq!(cap.tools.len(), 10);
+        assert_eq!(cap.tools.len(), 11);
         assert!(cap.tools.contains(&"save_questions".to_owned()));
+        assert!(cap.tools.contains(&"get_skill".to_owned()));
+        // 无内置 skill 时清单为空。
+        assert!(cap.skills.is_empty());
     }
 
     #[tokio::test]
@@ -283,9 +329,56 @@ mod tests {
             Arc::new(InMemoryItemRepository::default()),
             Arc::new(InMemoryQuestionRepository::default()),
             Arc::new(InMemoryEventStore::default()),
+            Vec::new(),
         );
         let cap = svc.bootstrap(2).await.unwrap();
         assert!(cap.prompt.contains("create_workspace"));
+        assert!(cap.skills.is_empty());
+    }
+
+    #[tokio::test]
+    async fn bootstrap_installs_full_skill_catalog() {
+        let c = ctx().await;
+        let svc = AgentService::new(
+            c.svc.workspaces.clone(),
+            c.item_repo.clone(),
+            Arc::new(InMemoryQuestionRepository::default()),
+            Arc::new(InMemoryEventStore::default()),
+            catalog(),
+        );
+        let cap = svc.bootstrap(1).await.unwrap();
+        // 全量下发：含脚本，Agent 首次接入即可安装。
+        assert_eq!(cap.skills, catalog());
+        assert_eq!(cap.skills.len(), 2);
+        assert_eq!(
+            cap.skills[0].script.as_deref(),
+            Some("步骤1：解析链接\n步骤2：生成框架笔记")
+        );
+        // 目录全局共享：任何用户接入拿到同一份。
+        let other = svc.bootstrap(2).await.unwrap();
+        assert_eq!(other.skills, catalog());
+    }
+
+    #[tokio::test]
+    async fn get_skill_returns_full_content_by_name() {
+        let c = ctx().await;
+        let svc = AgentService::new(
+            c.svc.workspaces.clone(),
+            c.item_repo.clone(),
+            Arc::new(InMemoryQuestionRepository::default()),
+            Arc::new(InMemoryEventStore::default()),
+            catalog(),
+        );
+        let s = svc.get_skill("链接转笔记").await.unwrap();
+        assert_eq!(s.description, "把链接内容整理成笔记");
+        assert_eq!(
+            s.script.as_deref(),
+            Some("步骤1：解析链接\n步骤2：生成框架笔记")
+        );
+        assert!(matches!(
+            svc.get_skill("不存在").await,
+            Err(Error::NotFound(_))
+        ));
     }
 
     #[tokio::test]
