@@ -36,7 +36,7 @@ pub struct QuestionInput {
 /// AgentBootstrap 返回值：Skill 定义、备考提示词、工具清单、内置 Skill 目录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentCapability {
-    pub skill: String,
+    pub assistant: String,
     pub prompt: String,
     pub tools: Vec<String>,
     /// 系统内置 Skill 目录（全量下发，含脚本）：Agent 首次接入自动下载安装。
@@ -127,7 +127,7 @@ where
                 .to_owned(),
         };
         Ok(AgentCapability {
-            skill: "xueban-study-assistant".to_owned(),
+            assistant: "xueban-study-assistant".to_owned(),
             prompt,
             tools: TOOLS.iter().map(|t| (*t).to_owned()).collect(),
             skills: self.skills.clone(),

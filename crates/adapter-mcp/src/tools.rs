@@ -542,7 +542,7 @@ pub struct QuestionInputDto {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentCapabilityDto {
-    pub skill: String,
+    pub assistant: String,
     pub prompt: String,
     pub tools: Vec<String>,
     pub skills: Vec<SkillDto>,
@@ -728,7 +728,7 @@ impl From<Skill> for SkillDto {
 impl From<AgentCapability> for AgentCapabilityDto {
     fn from(v: AgentCapability) -> Self {
         Self {
-            skill: v.skill,
+            assistant: v.assistant,
             prompt: v.prompt,
             tools: v.tools,
             skills: v.skills.into_iter().map(SkillDto::from).collect(),
