@@ -2,11 +2,14 @@
 # 镜像不做编译——先跑 scripts/build-musl.sh（二进制）与 trunk build --release（web 产物），
 # 再 build 本编排；skills/ 与前端 web 产物（clients/web/dist）只读挂载进 server，
 # 由服务端静态托管（bootstrap 的 WEB_DIST_DIR 兜底默认即相对路径 clients/web/dist），
-# 宿主直接替换挂载目录内容即更新，无需重建镜像。
+# 宿主直接替换挂载目录内容即更新，无需重建镜像；attachments/ 为可写挂载，
+# 承载笔记图片附件（宿主磁盘 {user_id}/{uuid} 布局，见架构文档 §8.1）。
 # 完整部署包由 scripts/package-server.sh 打 tar.gz，解压后即可直接 docker compose up --build。
 #
 # 用法：
-#   docker compose -f deploy/docker-compose.yml up -d --build
+#   scripts/start.sh    一键启动（缺产物自动补齐）
+#   scripts/stop.sh     一键停止（数据卷保留）
+#   或直接：docker compose -f deploy/docker-compose.yml up -d --build / down
 # 环境变量：POSTGRES_PASSWORD（生产必须改）、MCP_ENDPOINT（Agent 凭证下发的对外地址）。
 
 services:
@@ -34,9 +37,11 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-xueban}:${POSTGRES_PASSWORD:-xueban-dev-password}@postgres:5432/${POSTGRES_DB:-xueban}
       BIND_ADDR: 0.0.0.0:8080
       MCP_ENDPOINT: ${MCP_ENDPOINT:-http://127.0.0.1:8080/mcp}
+      ATTACHMENTS_DIR: /app/attachments
     volumes:
       - ../skills:/app/skills:ro
       - ../clients/web/dist:/app/clients/web/dist:ro
+      - ../attachments:/app/attachments
     ports:
       - "8080:8080"
     depends_on:

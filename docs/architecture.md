@@ -1,9 +1,8 @@
 # 超级学习助手 · 系统架构设计
 
-版本：v1.2 ｜ 日期：2026-08-15 ｜ 状态：评审稿
-关联文档：《requirements.md》（需求 v7.3）、桌面端原型 v3 柔和版、安卓端原型 v1
+版本：v1.1 ｜ 日期：2026-08-15 ｜ 状态：评审稿
+关联文档：《requirements.md》（需求 v7.2）、桌面端原型 v3 柔和版、安卓端原型 v1
 
-v1.2 变更：新增客户端更新机制（公开清单接口 `GET /api/v1/update` + 桌面端 Tauri updater + 安卓端自建 OTA），CI 增加桌面 Windows 矩阵与安卓 release 签名。
 v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增限界上下文划分、端口定义与 Rust 工程结构。
 
 ## 一、设计目标与约束
@@ -135,7 +134,6 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 | PaperRepository | 试卷快照存取 | question_ids 用 JSONB |
 | EventStore | 事件追加与按用户回放 | 按 (user_id, created_at) 索引 |
 | CredentialIssuer | token 生成 | 随机 32 字节 Base62，usr_ 前缀 |
-| UpdateSource | 客户端更新清单获取 | 拉取 GitHub Release 的 update.json，短 TTL 缓存 |
 
 ### 5.3 依赖倒置示例：刷题用例
 
@@ -157,30 +155,31 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── space.rs         # Workspace、Item 树、Annotation
 │   │       ├── practice.rs      # Question、WrongItem、Paper、抽题/判分领域服务
 │   │       ├── skill.rs         # Skill + UserSkill（内置目录解析 skills/*/skill.md；用户自定义存库）
-│   │       ├── update.rs        # UpdateManifest（客户端更新清单）
 │   │       ├── event.rs         # Event、领域事件定义
 │   │       └── ports.rs         # 仓储端口 traits（输出端口）
 │   ├── application/             # 应用层：用例编排
 │   │   └── src/
 │   │       ├── auth.rs          # Register / Login / Logout
 │   │       ├── space.rs         # ManageExamGoal / BrowseTree / Annotate
+│   │       ├── attachments.rs   # UploadAttachment / ReadAttachment / DeleteAttachment / 删 item 子树附件清理
 │   │       ├── quiz.rs          # DrawQuestions / SubmitAnswer
 │   │       ├── wrong.rs         # ListWrong / RedoWrong / MarkMastered
 │   │       ├── paper.rs         # AssemblePaper / SubmitPaper
 │   │       └── agent.rs         # AgentBootstrap / ReadEvents / ReportStatus / GetSkill / CreateSkill / ListSkills / DeleteSkill
-│   │       └── update.rs        # GetUpdateManifest（读 UpdateSource 端口）
 │   ├── adapter-http/            # 驱动适配器：Axum REST API（/api/v1）
 │   │   └── src/
 │   │       ├── lib.rs           # 路由组装与中间件
 │   │       ├── agent.rs         # Agent 凭证端点
 │   │       ├── auth.rs          # 注册 / 登录 / 注销
 │   │       ├── middleware.rs    # require_auth + 限流
+│   │       ├── attachments.rs   # 附件端点（上传 / 读取 / 删除）
 │   │       ├── skill.rs         # 自定义 Skill 端点（清单 / 新建 / 删除）
 │   │       └── ...              # space / quiz / wrong / paper 等端点
 │   ├── adapter-mcp/             # 驱动适配器：MCP 网关 + 能力下发
 │   ├── adapter-postgres/        # 被驱动适配器：SQLx 仓储与事件存储实现
 │   │   └── src/
 │   │       ├── lib.rs           # map_sqlx_error 与导出
+│   │       ├── attachments.rs   # PgAttachmentRepository + FsAttachmentStorage（附件元数据存库、二进制落宿主磁盘）
 │   │       ├── skill.rs         # PgSkillRepository（用户自定义 Skill 存库）
 │   │       └── ...              # 其余 Pg*Repository 与 PgEventStore
 │   └── bootstrap/               # 组装：依赖注入、配置、迁移、main
@@ -221,6 +220,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 - Workspace 聚合根保存 `exam_goal`（手写文本，不做枚举）与 `exam_date`，客户端据此渲染倒计时。
 - Item 分两类：`dir`（目录）与 `note`（笔记），通过 parent_id 任意嵌套。树的不变式在领域服务中维护：节点不可挂到自身子树下（防环）。
 - Annotation 区分作者：`ai`（Agent 写入的老师强调、考点提示）与 `user`（用户手写）。AI 批注不可被用户修改，只能删除；用户批注可编辑删除。锚点以正文引用片段定位。
+- Attachment 是笔记的图片附件，只挂 note（is_note 校验，同 annotate）：二进制存宿主磁盘 `ATTACHMENTS_DIR/{user_id}/{uuid}`（uuid 服务端生成、无扩展名，杜绝路径注入与伪造文件名），元数据存库（filename/mime/size_bytes）。mime 以魔数嗅探结果为准（白名单 png/jpeg/gif/webp，拒绝 svg 防脚本注入），上限 10MB。写入顺序：先落文件后插表行，插行失败回滚删文件；删除笔记时服务端先 `WITH RECURSIVE` 收集整棵子树附件、删磁盘文件，再删 item（表行由 DB 级联兜底）。崩溃窗口可能留下无表行引用的孤儿文件——无害，不做回收（折衷写进 §七）。
 - 所有写入校验 `workspace.user_id == 当前用户`，user_id 来自 token 解析的上下文，不接受客户端声明。
 
 ### 6.3 练习上下文
@@ -287,6 +287,18 @@ annotations (
   author     text not null,                -- ai | user
   anchor     text not null,                -- 正文引用片段（定位用）
   text       text not null,
+  created_at timestamptz default now()
+)
+
+-- 笔记图片附件：二进制落宿主磁盘，本表只存元数据；删除笔记时由服务端
+-- 先收集子树附件删磁盘文件（WITH RECURSIVE），行随 item 级联删除兜底
+attachments (
+  id         bigserial primary key,
+  item_id    bigint not null references items on delete cascade,
+  filename   text not null,                -- 原始文件名（仅展示用）
+  mime       text not null,                -- 以魔数嗅探结果为准，白名单 png/jpeg/gif/webp
+  size_bytes bigint not null,
+  uuid       text unique not null,         -- 磁盘文件名 {ATTACHMENTS_DIR}/{user_id}/{uuid}
   created_at timestamptz default now()
 )
 
@@ -368,6 +380,9 @@ events (
 | 批注 | `POST /api/v1/items/:id/annotations` | Annotate |
 | 批注 | `PUT /api/v1/annotations/:id` | Annotate（编辑文本，仅我的批注；AI 批注拒绝） |
 | 批注 | `DELETE /api/v1/annotations/:id` | Annotate（删除） |
+| 附件 | `POST /api/v1/items/:id/attachments` | UploadAttachment（raw bytes，Content-Type 白名单 + 魔数嗅探，≤10MB，仅 note） |
+| 附件 | `GET /api/v1/attachments/:id` | ReadAttachment（Bearer 鉴权，返回存储 mime + `X-Content-Type-Options: nosniff`；`<img>` 带不了 header，前端 fetch→blob 渲染） |
+| 附件 | `DELETE /api/v1/attachments/:id` | DeleteAttachment（删除笔记时级联清理整棵子树附件文件） |
 | 刷题 | `GET /api/v1/quiz/questions?scope=` | DrawQuestions |
 | 刷题 | `POST /api/v1/quiz/answer` | SubmitAnswer |
 | 错题 | `GET /api/v1/wrong` | ListWrong |
@@ -382,7 +397,6 @@ events (
 | Skill | `GET /api/v1/agent/skills` | ListSkills（用户自定义 Skill 清单） |
 | Skill | `POST /api/v1/agent/skills` | CreateSkill（保存自定义 Skill） |
 | Skill | `DELETE /api/v1/agent/skills/:id` | DeleteSkill |
-| 更新 | `GET /api/v1/update` | GetUpdateManifest（公开，无需登录；返回桌面端 Tauri 兼容清单 + 安卓端字段，见 requirements.md §13.2） |
 
 作答与答案的 JSON 格式约定（`questions.answer`、`quiz_records.chosen`、REST 请求/响应共用）：
 
@@ -404,6 +418,7 @@ MCP tool handler 与 REST handler 一样只做协议翻译，复用同一组用�
 | `get_events` | ReadEvents |
 | `report_status` | ReportStatus |
 | `get_skill` | GetSkill（按名拉取 skill 完整内容，含脚本，重新安装/更新用；用户自定义优先，无同名自定义时回退内置目录） |
+| `upload_attachment` | UploadAttachment（Agent 上传笔记图片：`{item_id, filename, content_base64}` → `{id, url}`，与 REST 同校验；base64 解码后走同一用例） |
 
 MCP 适配器的强制规则：
 
@@ -469,9 +484,8 @@ Agent 生成（原始数据）                使用过程（派生数据）
 - 隔离：数据归属链为 token → user → workspace → items/questions/...。用例上下文统一携带 user_id，仓储实现强制在 SQL 中附加该条件；MCP 工具入参中不存在用户身份字段，从协议层杜绝串用户。
 - 传输：全站 HTTPS；MCP 通道同样走 HTTPS。
 - 审计：Agent 的每次写入、用户的每次作答都落 events 表，可按用户回溯全部内容变更。
-- 输入校验：驱动适配器做协议层校验（格式、大小），领域层做业务校验（归属、不变式）。笔记正文与题目写入有大小上限（单 item 正文 ≤ 512KB，单批题目 ≤ 200 题）。
+- 输入校验：驱动适配器做协议层校验（格式、大小），领域层做业务校验（归属、不变式）。笔记正文与题目写入有大小上限（单 item 正文 ≤ 512KB，单批题目 ≤ 200 题）；附件 ≤ 10MB，MIME 以魔数嗅探为准（白名单 png/jpeg/gif/webp），读取带 `X-Content-Type-Options: nosniff`。
 - 限流：REST 与 MCP 均按 token 限流，REST 鉴权通过后另按账号（user_id）封顶，防多 token 叠加绕限；注册接口按 IP 限流防刷。计数为进程内存固定窗口（单机部署足够，Redis 二期可选引入，见 §9）。
-- 客户端更新防篡改：更新清单与安装包经 GitHub Release 分发；桌面端 Tauri updater 校验安装包签名（私钥仅存 CI 密钥），安卓端校验 sha256（与清单比对），客户端只安装哈希/签名匹配的包；`GET /api/v1/update` 返回的清单带版本与哈希，作为客户端唯一信任来源。
 
 ## 十一、部署架构
 
@@ -488,11 +502,12 @@ Agent 生成（原始数据）                使用过程（派生数据）
 └────────────────────────────────────────────┘
 ```
 
-- **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制 + trunk 编译前端 web 产物，`scripts/package-server.sh` 打成安装包（tar.gz：`deploy/` + `skills/` + 二进制按仓库路径 + `clients/web/dist`，解压即部署源）。`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录与前端 web 产物由 compose 只读挂载（`../skills:/app/skills:ro`、`../clients/web/dist:/app/clients/web/dist:ro`），宿主直接替换挂载目录内容即更新，无需重建镜像。
+- **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制 + trunk 编译前端 web 产物，`scripts/package-server.sh` 打成安装包（tar.gz：`deploy/` + `scripts/` + `skills/` + 二进制按仓库路径 + `clients/web/dist`，解压即部署源）。`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录与前端 web 产物由 compose 只读挂载（`../skills:/app/skills:ro`、`../clients/web/dist:/app/clients/web/dist:ro`），宿主直接替换挂载目录内容即更新，无需重建镜像。解压后 `scripts/start.sh` 一键启动（缺 musl 二进制/前端产物时自动补齐，等待健康检查通过后提示就绪），`scripts/stop.sh` 一键停止（保留 pgdata 数据卷）。
 - **前端由服务端静态托管**：不做 nginx 容器。bootstrap 挂 SPA fallback——REST 与 MCP 路由优先，其余路径由 server 直接 serve 前端产物（`WEB_DIST_DIR`，默认相对路径 `clients/web/dist`，与 skills 同挂载模式），未命中文件回退 `index.html`；`/api` 与 `/mcp` 的未匹配路径保持 404，不回退到页面。前端 API 基址走浏览器运行期同源兜底（location.origin），与 MCP 天然同源。
-- **compose 编排两个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `server`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT` 环境变量注入）。浏览器访问 `http://<host>:8080`，MCP 端点对外为 `http://<host>:8080/mcp`。
-- **打固定版本 tag 才发 Release**：推送 `v*` tag（如 `v0.1.0`，版本号手动固定）触发；gate + build-musl + android + desktop 通过后创建 GitHub Release（用所打的 tag），上传**四个独立交付物**——服务端部署包（tar.gz，docker 部署源）、安卓 APK（release 签名，可安装验证）、桌面端安装包（Linux .deb / .AppImage + Windows NSIS）、更新清单 `update.json`（版本号、各平台安装包 sha256 与 Tauri 签名、下载地址，见 requirements.md §13）。日常推 main 不发。
-- **客户端更新分发**：发布产物统一按固定名上传（`xueban-<tag>.apk`、`xueban_<ver>_amd64.deb` / `.AppImage`、`xueban_<ver>_x64-setup.exe`、`update.json`），`https://github.com/…/releases/latest/download/<名>` 直链稳定；服务端 `GET /api/v1/update` 拉取 update.json 并短 TTL 缓存，客户端启动时经该接口检查更新（桌面端 Tauri updater 校验签名；安卓端自建 OTA 校验 sha256 后走系统安装器，macOS 暂不做）。
+- **compose 编排两个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `server`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT`/`ATTACHMENTS_DIR` 环境变量注入）。浏览器访问 `http://<host>:8080`，MCP 端点对外为 `http://<host>:8080/mcp`。
+- **附件目录**：笔记图片二进制存宿主磁盘，`ATTACHMENTS_DIR` env（默认相对路径 `attachments`）指向 compose 可写挂载 `../attachments:/app/attachments`，与 skills 同"宿主编辑即生效"模式；布局 `{user_id}/{uuid}`，随用户增长，备份策略与 pgdata 数据卷一致（部署侧 cron 负责）。
+- **打固定版本 tag 才发 Release**：`on.push` 同时监听分支与 `v*` tag，推送 `v*` tag（如 `v0.1.0`，版本号手动固定）即触发整条流水线；gate + build-musl + android + desktop 通过后创建 GitHub Release（用所打的 tag），上传**三个独立交付物**——服务端部署包（tar.gz，docker 部署源）、安卓 APK、桌面端安装包（Linux .deb / .AppImage）。日常推 main 只跑 gate + 三个构建 job（上传 artifact），不发 Release。
+- **客户端端点域名由 CI 注入**：本地开发默认走模拟器/本地回环（安卓 `http://10.0.2.2:8080/api/v1`、桌面同源/127.0.0.1），生产构建在 CI 显式覆盖——安卓 `./gradlew -PapiBaseUrl=https://buildstore.mjcode.top/api/v1`（gradle 属性 → BuildConfig.API_BASE_URL），桌面 `XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build`（env 传给 trunk 构建期 `base_url()` 解析，优先级最高）。改域名只动 CI，不动客户端默认值。
 - **数据库迁移内置**：sqlx::migrate! 编译期嵌入迁移脚本，server 启动时自动执行，镜像无需挂载 migrations/。
 - TLS 与域名反代不在 compose 内（由部署侧网关 / 平台另行处理）；数据库备份（每日 pg_dump → 对象存储）由部署侧 cron 或托管服务承担，不再内置 sidecar。
 - 服务端无推理负载，2C4G 可支撑数千日活；瓶颈出现时优先升配。
@@ -517,7 +532,7 @@ Agent 生成（原始数据）                使用过程（派生数据）
 | 服务端语言 | Rust + Axum + SQLx | 单二进制，domain crate 零框架依赖 |
 | 数据库 | PostgreSQL 16 | 树结构 + JSONB 题目/事件 |
 | 缓存 | Redis（可选，二期引入） | 会话缓存、限流计数 |
-| 桌面端 | Tauri + Web 前端 | 按 v3 柔和版原型实现；更新用 tauri-plugin-updater（Linux / Windows，签名更新，macOS 暂不做） |
+| 桌面端 | Tauri + Web 前端 | 按 v3 柔和版原型实现 |
 | 安卓端 | Kotlin + Jetpack Compose + Material 3 | 按安卓原型 v1 实现；WindowSizeClass 处理折叠屏（≥600dp 双栏） |
 | Agent 接入 | MCP over HTTPS | 能力包 = Skill + 提示词 + 工具清单 |
 | 部署 | Docker Compose + Caddy | 单机起步 |
@@ -529,7 +544,6 @@ Agent 生成（原始数据）                使用过程（派生数据）
 | P0 账号与接入 | 六边形工程骨架（crate 分层 + CI 依赖检查）、注册 / 登录 / token、工作空间与考试目标、MCP 适配器 + 能力下发、items 树读写 | Agent 复制凭证接入后能生成目录与笔记，客户端可见；两用户数据互不可见；domain crate 无框架依赖 |
 | P1 学习闭环 | 批注、题库写入、刷题、错题本 | 笔记可批注；每集习题可刷；答错自动进错题本并可重做；用例层测试全绿 |
 | P2 模考与复盘 | 组卷、模考判分、复盘事件读取、学习统计 | 组卷 75 题模考全流程跑通；复盘 Agent 能读到错题事件 |
-| P2.5 客户端更新 | 更新清单接口、桌面端 Tauri updater 接入（Linux / Windows）、安卓端自建 OTA（release 签名）、CI 双平台打包 | 打 v* tag 发版后，桌面端与安卓端启动检查并提示更新，下载安装全流程可用 |
 | P3 商业化基础 | 订阅计费接口、配额管理 | 账号体系对接支付，按订阅控制配额 |
 
 客户端节奏：桌面端随 P0/P1 同步实现，安卓端在 P1 完成后按已定稿原型开发，两端共用同一后端，不重复建设。

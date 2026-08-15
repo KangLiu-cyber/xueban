@@ -4,6 +4,7 @@
 //! （adapter-postgres 等）实现并注入；测试用 `inmem` 内存替身。
 
 pub mod agent;
+pub mod attachments;
 pub mod auth;
 pub mod paper;
 pub mod quiz;

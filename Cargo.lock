@@ -26,6 +26,7 @@ version = "0.1.0"
 dependencies = [
  "application",
  "axum",
+ "base64",
  "chrono",
  "domain",
  "rmcp",
@@ -47,6 +48,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -83,6 +85,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

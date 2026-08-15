@@ -8,12 +8,13 @@ mod common;
 
 use adapter_http::{AppState, router};
 use adapter_postgres::{
-    Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
-    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgSkillRepository,
-    PgTokenRepository, PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository,
-    RandomCredentialIssuer,
+    Argon2PasswordHasher, FsAttachmentStorage, PgAnnotationRepository, PgAttachmentRepository,
+    PgEventStore, PgItemRepository, PgPaperRepository, PgQuestionRepository,
+    PgQuizRecordRepository, PgSkillRepository, PgTokenRepository, PgUserRepository,
+    PgWorkspaceRepository, PgWrongItemRepository, RandomCredentialIssuer,
 };
 use application::agent::AgentService;
+use application::attachments::AttachmentService;
 use application::auth::AuthService;
 use application::paper::PaperService;
 use application::quiz::QuizService;
@@ -21,22 +22,24 @@ use application::space::SpaceService;
 use application::wrong::WrongService;
 use axum::Router;
 use axum::body::Body;
-use axum::http::{Method, Request, StatusCode};
+use axum::http::{HeaderMap, Method, Request, StatusCode};
 use chrono::Utc;
 use domain::ports::{
-    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
-    UserRepository, WorkspaceRepository, WrongItemRepository,
+    AnnotationRepository, AttachmentRepository, AttachmentStorage, CredentialIssuer, EventStore,
+    ItemRepository, PaperRepository, PasswordHasher, QuestionRepository, QuizRecordRepository,
+    SkillRepository, TokenRepository, UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 use domain::practice::{Answer, Question, QuestionType};
 use domain::space::{Creator, Item, ItemKind};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tower::ServiceExt;
 
 /// 与 bootstrap 相同的六边形组装（P1-10）：仓储 → 用例服务 → 注入 REST 适配器。
-async fn app() -> Option<Router> {
+/// 额外组装附件服务（真实磁盘目录），返回临时附件目录供测试清理与落盘断言。
+async fn app_with_dir() -> Option<(Router, PathBuf)> {
     let pool = common::pool().await?;
     common::setup(&pool).await;
     let users: Arc<dyn UserRepository + Send + Sync> =
@@ -61,6 +64,12 @@ async fn app() -> Option<Router> {
         Arc::new(PgPaperRepository::new(pool.clone()));
     let skills_repo: Arc<dyn SkillRepository + Send + Sync> =
         Arc::new(PgSkillRepository::new(pool.clone()));
+    let attachment_repo: Arc<dyn AttachmentRepository + Send + Sync> =
+        Arc::new(PgAttachmentRepository::new(pool.clone()));
+    let dir = std::env::temp_dir().join(format!("xueban-att-{}", common::stamp()));
+    std::fs::create_dir_all(&dir).expect("创建临时附件目录失败");
+    let storage: Arc<dyn AttachmentStorage + Send + Sync> =
+        Arc::new(FsAttachmentStorage::new(dir.clone()));
     let events: Arc<dyn EventStore + Send + Sync> = Arc::new(PgEventStore::new(pool));
 
     let auth = Arc::new(AuthService::new(users, tokens, hasher, issuer));
@@ -89,21 +98,30 @@ async fn app() -> Option<Router> {
     ));
     let agent = Arc::new(AgentService::new(
         workspaces,
-        items,
+        items.clone(),
         questions,
         events,
         skills_repo,
         Vec::new(),
     ));
-    Some(router(AppState::new(
-        auth,
-        space,
-        quiz,
-        wrong,
-        paper,
-        agent,
-        "https://mcp.example.com/mcp".into(),
-    )))
+    let attachments = Arc::new(AttachmentService::new(items, attachment_repo, storage));
+    Some((
+        router(AppState::new(
+            auth,
+            space,
+            quiz,
+            wrong,
+            paper,
+            agent,
+            attachments,
+            "https://mcp.example.com/mcp".into(),
+        )),
+        dir,
+    ))
+}
+
+async fn app() -> Option<Router> {
+    app_with_dir().await.map(|(r, _)| r)
 }
 
 async fn send(
@@ -173,6 +191,43 @@ async fn create_workspace(app: &Router, token: &str, name: &str) -> Value {
     .await;
     assert_eq!(status, StatusCode::OK, "建空间失败: {body}");
     body
+}
+
+/// 原始字节请求（附件上传/读取）：返回状态 + 完整响应头 + 响应字节。
+async fn send_raw(
+    app: &Router,
+    method: Method,
+    uri: &str,
+    token: Option<&str>,
+    content_type: Option<&str>,
+    body: Vec<u8>,
+) -> (StatusCode, HeaderMap, Vec<u8>) {
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(t) = token {
+        builder = builder.header("authorization", format!("Bearer {t}"));
+    }
+    if let Some(ct) = content_type {
+        builder = builder.header("content-type", ct);
+    }
+    let req = builder.body(Body::from(body)).expect("构建请求失败");
+    let resp = app.clone().oneshot(req).await.expect("请求失败");
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("读响应失败")
+        .to_bytes()
+        .to_vec();
+    (status, headers, bytes)
+}
+
+/// 合法 PNG 字节（魔数嗅探通过的最小样本）。
+fn png_bytes() -> Vec<u8> {
+    vec![
+        0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02, 0x03,
+    ]
 }
 
 /// 播种一个笔记集（Agent 侧产物的替身）与 n 道单选题，返回 (item_id, 题号列表)。
@@ -576,7 +631,7 @@ async fn quiz_wrong_and_paper_full_loop() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "交卷失败: {result}");
-    assert_eq!(result["correct"], json!(2)); // 缺答 q_ids[2] 计错
+    assert_eq!(result["correct"], json!(1)); // q0 答对、q1 答错、q2 缺答计错
     assert_eq!(result["total"], json!(3));
     let (status, _) = send(
         &app,
@@ -671,4 +726,335 @@ async fn agent_credential_rotate_flow() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_ne!(second["token"], first["token"]);
+}
+
+// ---- 附件（§8.1）：上传 / 读取 / 删除 / 隔离 / 级联 ----
+
+/// 播种一个 note（或 dir）item，返回 item_id（Agent 侧产物的替身）。
+async fn seed_item(
+    pool: &sqlx::PgPool,
+    ws_id: i64,
+    parent_id: Option<i64>,
+    kind: ItemKind,
+    name: &str,
+) -> i64 {
+    let item_repo = PgItemRepository::new(pool.clone());
+    let item = Item {
+        id: 0,
+        workspace_id: ws_id,
+        parent_id,
+        kind,
+        name: format!("{name}_{}", common::stamp()),
+        content: Some("内容".into()),
+        created_by: Creator::Agent,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+    item_repo.insert(&item).await.expect("插入 item 失败")
+}
+
+/// 目录内已上传文件数（递归）。
+fn disk_files(dir: &std::path::Path) -> usize {
+    fn walk(p: &std::path::Path) -> usize {
+        std::fs::read_dir(p)
+            .map(|rd| {
+                rd.flatten()
+                    .map(|e| {
+                        if e.path().is_dir() {
+                            walk(&e.path())
+                        } else {
+                            1
+                        }
+                    })
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+    walk(dir)
+}
+
+#[tokio::test]
+async fn attachment_lifecycle_and_isolation() {
+    let Some((app, dir)) = app_with_dir().await else {
+        return;
+    };
+    let (alice, alice_body) = register(&app, "att_a").await;
+    let alice_id = alice_body["user"]["id"].as_i64().expect("无用户 id");
+    let (bob, _) = register(&app, "att_b").await;
+    let ws = create_workspace(&app, &alice, "集").await;
+    let ws_id = ws["id"].as_i64().expect("无空间 id");
+
+    let pool = common::pool().await.expect("池已存在");
+    let note_id = seed_item(&pool, ws_id, None, ItemKind::Note, "笔记").await;
+    let bytes = png_bytes();
+
+    // 上传：201 + 元数据（魔数权威 mime）+ 磁盘落盘 {user_id}/{uuid}。
+    let (status, headers, body) = send_raw(
+        &app,
+        Method::POST,
+        &format!("/api/v1/items/{note_id}/attachments?name=图.png"),
+        Some(&alice),
+        Some("image/png"),
+        bytes.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "上传失败: {body:?}");
+    let att: Value = serde_json::from_slice(&body).expect("响应非 JSON");
+    let att_id = att["id"].as_i64().expect("无附件 id");
+    assert_eq!(att["mime"], json!("image/png"));
+    assert_eq!(att["filename"], json!("图.png"));
+    assert_eq!(att["size_bytes"], json!(bytes.len() as i64));
+    assert_eq!(
+        headers.get("content-type").map(|v| v.to_str().unwrap()),
+        Some("application/json")
+    );
+    let uuid = att["uuid"].as_str().expect("无 uuid");
+    let disk_path = dir.join(alice_id.to_string()).join(uuid);
+    assert!(disk_path.is_file(), "文件未落盘: {disk_path:?}");
+    assert_eq!(std::fs::read(&disk_path).expect("读盘失败"), bytes);
+
+    // 读取：200 + 存储 mime + nosniff + 原字节。
+    let (status, headers, body) = send_raw(
+        &app,
+        Method::GET,
+        &format!("/api/v1/attachments/{att_id}"),
+        Some(&alice),
+        None,
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers.get("content-type").map(|v| v.to_str().unwrap()),
+        Some("image/png")
+    );
+    assert_eq!(
+        headers
+            .get("x-content-type-options")
+            .map(|v| v.to_str().unwrap()),
+        Some("nosniff")
+    );
+    assert_eq!(body, bytes);
+
+    // 无 token 401；跨用户 404（读取与删除双隔离）。
+    let (status, _, _) = send_raw(
+        &app,
+        Method::GET,
+        &format!("/api/v1/attachments/{att_id}"),
+        None,
+        None,
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _, _) = send_raw(
+        &app,
+        Method::GET,
+        &format!("/api/v1/attachments/{att_id}"),
+        Some(&bob),
+        None,
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = send(
+        &app,
+        Method::DELETE,
+        &format!("/api/v1/attachments/{att_id}"),
+        Some(&bob),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // 单删：204 → 读取 404 → 磁盘文件消失。
+    let (status, _) = send(
+        &app,
+        Method::DELETE,
+        &format!("/api/v1/attachments/{att_id}"),
+        Some(&alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _, _) = send_raw(
+        &app,
+        Method::GET,
+        &format!("/api/v1/attachments/{att_id}"),
+        Some(&alice),
+        None,
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(!disk_path.exists(), "删除后文件应消失");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test]
+async fn attachment_validation_and_limits() {
+    let Some((app, dir)) = app_with_dir().await else {
+        return;
+    };
+    let (alice, _) = register(&app, "att_v").await;
+    let ws = create_workspace(&app, &alice, "集").await;
+    let ws_id = ws["id"].as_i64().expect("无空间 id");
+
+    let pool = common::pool().await.expect("池已存在");
+    let note_id = seed_item(&pool, ws_id, None, ItemKind::Note, "笔记").await;
+    let dir_id = seed_item(&pool, ws_id, None, ItemKind::Dir, "目录").await;
+
+    // svg 白名单拒绝（XSS 面）。
+    let (status, _, body) = send_raw(
+        &app,
+        Method::POST,
+        &format!("/api/v1/items/{note_id}/attachments"),
+        Some(&alice),
+        Some("image/svg+xml"),
+        b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_vec(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "svg 应被拒: {body:?}");
+
+    // 声明 png 但字节不是图片：魔数嗅探权威拒绝。
+    let (status, _, _) = send_raw(
+        &app,
+        Method::POST,
+        &format!("/api/v1/items/{note_id}/attachments"),
+        Some(&alice),
+        Some("image/png"),
+        b"not an image at all".to_vec(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // 超 10MB 业务上限 → 400。
+    let mut huge = png_bytes();
+    huge.extend(std::iter::repeat_n(0u8, 10 * 1024 * 1024));
+    let (status, _, _) = send_raw(
+        &app,
+        Method::POST,
+        &format!("/api/v1/items/{note_id}/attachments"),
+        Some(&alice),
+        Some("image/png"),
+        huge,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // 13MB > 12MB 路由缓冲上限 → 413（RequestBodyLimitLayer 只作用上传子路由）。
+    let mut over = png_bytes();
+    over.extend(std::iter::repeat_n(0u8, 13 * 1024 * 1024));
+    let (status, _, _) = send_raw(
+        &app,
+        Method::POST,
+        &format!("/api/v1/items/{note_id}/attachments"),
+        Some(&alice),
+        Some("image/png"),
+        over,
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    // 目录不能挂附件（is_note 校验）。
+    let (status, _, body) = send_raw(
+        &app,
+        Method::POST,
+        &format!("/api/v1/items/{dir_id}/attachments"),
+        Some(&alice),
+        Some("image/png"),
+        png_bytes(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "目录挂附件应被拒: {body:?}"
+    );
+
+    // 以上全部失败路径不落盘。
+    assert_eq!(disk_files(&dir), 0, "失败路径不应写盘");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test]
+async fn attachment_cascade_delete_with_item_tree() {
+    let Some((app, dir)) = app_with_dir().await else {
+        return;
+    };
+    let (alice, _) = register(&app, "att_c").await;
+    let ws = create_workspace(&app, &alice, "集").await;
+    let ws_id = ws["id"].as_i64().expect("无空间 id");
+
+    let pool = common::pool().await.expect("池已存在");
+    // 父 note 带子 note（两层深度），各自挂一个附件。
+    let parent = seed_item(&pool, ws_id, None, ItemKind::Note, "父笔记").await;
+    let child = seed_item(&pool, ws_id, Some(parent), ItemKind::Note, "子笔记").await;
+    let a1 = {
+        let (status, _, body) = send_raw(
+            &app,
+            Method::POST,
+            &format!("/api/v1/items/{parent}/attachments"),
+            Some(&alice),
+            Some("image/png"),
+            png_bytes(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        serde_json::from_slice::<Value>(&body).expect("非 JSON")["id"]
+            .as_i64()
+            .expect("无附件 id")
+    };
+    let a2 = {
+        let (status, _, body) = send_raw(
+            &app,
+            Method::POST,
+            &format!("/api/v1/items/{child}/attachments"),
+            Some(&alice),
+            Some("image/gif"),
+            b"GIF89a\x01\x00\x01\x00".to_vec(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        serde_json::from_slice::<Value>(&body).expect("非 JSON")["id"]
+            .as_i64()
+            .expect("无附件 id")
+    };
+    assert_eq!(disk_files(&dir), 2, "两个附件都应落盘");
+
+    // 删父 item：子树附件先清文件，再删 item（DB 级联清行）。
+    let (status, _) = send(
+        &app,
+        Method::DELETE,
+        &format!("/api/v1/items/{parent}"),
+        Some(&alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "删父 item 失败");
+    let (status, _, _) = send_raw(
+        &app,
+        Method::GET,
+        &format!("/api/v1/attachments/{a1}"),
+        Some(&alice),
+        None,
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _, _) = send_raw(
+        &app,
+        Method::GET,
+        &format!("/api/v1/attachments/{a2}"),
+        Some(&alice),
+        None,
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(disk_files(&dir), 0, "级联删除后磁盘应清空");
+
+    std::fs::remove_dir_all(&dir).ok();
 }

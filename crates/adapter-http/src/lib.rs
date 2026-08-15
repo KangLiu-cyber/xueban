@@ -14,6 +14,7 @@
 //! `Arc<dyn Trait + Send + Sync>` trait 对象，不反向依赖 adapter-postgres。
 
 pub mod agent;
+pub mod attachments;
 pub mod auth;
 pub mod error;
 pub mod middleware;
@@ -26,6 +27,7 @@ pub mod wrong;
 use std::sync::Arc;
 
 use application::agent::AgentService;
+use application::attachments::AttachmentService;
 use application::auth::AuthService;
 use application::paper::PaperService;
 use application::quiz::QuizService;
@@ -36,9 +38,9 @@ use axum::middleware as axum_mw;
 use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use domain::ports::{
-    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
-    UserRepository, WorkspaceRepository, WrongItemRepository,
+    AnnotationRepository, AttachmentRepository, AttachmentStorage, CredentialIssuer, EventStore,
+    ItemRepository, PaperRepository, PasswordHasher, QuestionRepository, QuizRecordRepository,
+    SkillRepository, TokenRepository, UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 
 use middleware::RateLimiter;
@@ -86,6 +88,15 @@ pub type PgAgentService = AgentService<
     dyn SkillRepository + Send + Sync,
 >;
 
+pub type PgAttachmentService = AttachmentService<
+    dyn ItemRepository + Send + Sync,
+    dyn AttachmentRepository + Send + Sync,
+    dyn AttachmentStorage + Send + Sync,
+>;
+
+/// 附件上传路由的请求体上限：10MB 业务上限 + 2MB 余量（仅挂在上传子路由）。
+const UPLOAD_BODY_LIMIT: usize = 12 * 1024 * 1024;
+
 /// 应用状态：全部用例服务（bootstrap 预组装注入）+ MCP 网关地址 + 限流器。
 #[derive(Clone)]
 pub struct AppState {
@@ -95,13 +106,16 @@ pub struct AppState {
     pub wrong: Arc<PgWrongService>,
     pub paper: Arc<PgPaperService>,
     pub agent: Arc<PgAgentService>,
+    pub attachments: Arc<PgAttachmentService>,
     pub mcp_endpoint: String,
     pub limiter: Arc<RateLimiter>,
 }
 
 impl AppState {
     /// 接收 bootstrap 注入的预组装服务；mcp_endpoint 为 MCP 网关对外地址，
-    /// 经凭证端点随 token 下发给 Agent。
+    /// 经凭证端点随 token 下发给 Agent。参数即各用例服务句柄，是唯一组装
+    /// 注入点，多参数是结构所需，不引入 builder 间接层。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         auth: Arc<PgAuthService>,
         space: Arc<PgSpaceService>,
@@ -109,6 +123,7 @@ impl AppState {
         wrong: Arc<PgWrongService>,
         paper: Arc<PgPaperService>,
         agent: Arc<PgAgentService>,
+        attachments: Arc<PgAttachmentService>,
         mcp_endpoint: String,
     ) -> Self {
         Self {
@@ -118,6 +133,7 @@ impl AppState {
             wrong,
             paper,
             agent,
+            attachments,
             mcp_endpoint,
             limiter: Arc::new(RateLimiter::default()),
         }
@@ -141,7 +157,18 @@ pub fn router(state: AppState) -> Router {
             middleware::rate_limit_by_ip,
         ));
 
+    // 上传子路由单独挂流式体限制（12MB）：axum 的 DefaultBodyLimit 只是
+    // 扩展标记，仅对内置 extractor 生效，自定义 RawBody 会绕过；tower-http
+    // 的 RequestBodyLimitLayer 用 Limited 包裹 Body，超限产生
+    // LengthLimitError，由 RawBody 映射为 413。只放宽本端点，不影响其他路由。
+    let attachment_upload = Router::new()
+        .route("/items/{id}/attachments", post(attachments::upload))
+        .route_layer(tower_http::limit::RequestBodyLimitLayer::new(
+            UPLOAD_BODY_LIMIT,
+        ));
+
     let protected = Router::new()
+        .merge(attachment_upload)
         .route(
             "/workspaces",
             get(space::list_workspaces).post(space::create_workspace),
@@ -175,6 +202,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/agent/skills/{id}",
             axum::routing::delete(skill::delete_skill),
+        )
+        .route(
+            "/attachments/{id}",
+            get(attachments::read).delete(attachments::delete),
         )
         .layer(axum_mw::from_fn_with_state(
             state.clone(),

@@ -5,6 +5,8 @@
 //! - `BIND_ADDR`：监听地址，默认 `127.0.0.1:8080`；
 //! - `MCP_ENDPOINT`：MCP 网关对外地址（随 Agent 凭证下发），默认 `http://<BIND_ADDR>/mcp`；
 //! - `SKILLS_DIR`：内置 Skill 目录，默认 `skills`（相对工作目录，一个子文件夹一个 skill）；
+//! - `ATTACHMENTS_DIR`：附件二进制根目录，默认 `attachments`（相对工作目录，布局
+//!   `{user_id}/{uuid}`，见 §8.1 附件端点）；
 //! - `WEB_DIST_DIR`：前端 web 静态产物目录，默认 `clients/web/dist`（相对工作目录，
 //!   由服务端静态托管，SPA 回退 index.html；`/api` 与 `/mcp` 未匹配路径保持 404）。
 //!
@@ -17,12 +19,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 use adapter_postgres::{
-    Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
-    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgSkillRepository,
-    PgTokenRepository, PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository,
-    RandomCredentialIssuer,
+    Argon2PasswordHasher, FsAttachmentStorage, PgAnnotationRepository, PgAttachmentRepository,
+    PgEventStore, PgItemRepository, PgPaperRepository, PgQuestionRepository,
+    PgQuizRecordRepository, PgSkillRepository, PgTokenRepository, PgUserRepository,
+    PgWorkspaceRepository, PgWrongItemRepository, RandomCredentialIssuer,
 };
 use application::agent::AgentService;
+use application::attachments::AttachmentService;
 use application::auth::AuthService;
 use application::paper::PaperService;
 use application::quiz::QuizService;
@@ -32,9 +35,9 @@ use axum::Router;
 use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse;
 use domain::ports::{
-    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
-    UserRepository, WorkspaceRepository, WrongItemRepository,
+    AnnotationRepository, AttachmentRepository, AttachmentStorage, CredentialIssuer, EventStore,
+    ItemRepository, PaperRepository, PasswordHasher, QuestionRepository, QuizRecordRepository,
+    SkillRepository, TokenRepository, UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 use domain::skill::{Skill, parse_skill_file};
 use sqlx::postgres::PgPoolOptions;
@@ -131,7 +134,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(PgPaperRepository::new(pool.clone()));
     let skills_repo: Arc<dyn SkillRepository + Send + Sync> =
         Arc::new(PgSkillRepository::new(pool.clone()));
-    let events: Arc<dyn EventStore + Send + Sync> = Arc::new(PgEventStore::new(pool));
+    let events: Arc<dyn EventStore + Send + Sync> = Arc::new(PgEventStore::new(pool.clone()));
+
+    // 附件：宿主磁盘存二进制（{ATTACHMENTS_DIR}/{user_id}/{uuid}），元数据走仓储。
+    // 启动即建根目录，目录缺失/不可写提前暴露而非等到上传时才报错。
+    let attachments_dir =
+        std::env::var("ATTACHMENTS_DIR").unwrap_or_else(|_| "attachments".to_owned());
+    std::fs::create_dir_all(&attachments_dir)?;
+    info!(dir = %attachments_dir, "附件存储目录就绪");
+    let attachment_repo: Arc<dyn AttachmentRepository + Send + Sync> =
+        Arc::new(PgAttachmentRepository::new(pool.clone()));
+    let attachment_storage: Arc<dyn AttachmentStorage + Send + Sync> =
+        Arc::new(FsAttachmentStorage::new(attachments_dir));
+    let attachments = Arc::new(AttachmentService::new(
+        items.clone(),
+        attachment_repo,
+        attachment_storage,
+    ));
 
     // 内置 Skill 目录：启动时从 `skills/` 文件夹加载（开发者维护的静态资产）。
     let skills_dir = std::env::var("SKILLS_DIR").unwrap_or_else(|_| "skills".to_owned());
@@ -178,9 +197,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wrong,
         paper,
         agent.clone(),
+        attachments.clone(),
         mcp_endpoint,
     );
-    let mcp_state = adapter_mcp::McpState::new(auth, space, agent);
+    let mcp_state = adapter_mcp::McpState::new(auth, space, agent, attachments);
 
     // 前端静态托管（部署资产，见 docs/architecture.md §11）：REST 与 MCP 路由优先，
     // 其余路径由服务端直接 serve 前端产物（默认 `clients/web/dist`，相对工作目录），

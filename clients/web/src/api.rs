@@ -522,6 +522,38 @@ pub async fn submit_paper(paper_id: i64, req: &SubmitRequest) -> ApiResult<Paper
     .await
 }
 
+// ---- 附件 ----
+
+/// 带鉴权获取附件二进制。`<img>` 标签无法携带 Authorization header，
+/// 笔记图片由视图 fetch → Blob → objectURL 后赋给 src（§8.1 附件读取）。
+pub async fn fetch_attachment(id: i64) -> ApiResult<Vec<u8>> {
+    let url = format!("{}/api/v1/attachments/{}", base_url(), id);
+    let mut req = Request::get(&url);
+    let token = AUTH_TOKEN_OPT.with(|c| c.borrow().clone());
+    if let Some(t) = token {
+        req = req.header("Authorization", &format!("Bearer {}", t));
+    }
+    let req = Request::try_from(req).map_err(|e| ApiError::Network(e.to_string()))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| ApiError::Network(e.to_string()))?;
+    let status = resp.status();
+    if !(200..300).contains(&status) {
+        if status == 401 {
+            fire_unauthorized();
+        }
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))?;
+        return Err(parse_error(&text).await);
+    }
+    resp.binary()
+        .await
+        .map_err(|e| ApiError::Network(e.to_string()))
+}
+
 // ---- Agent 凭证 ----
 
 pub async fn credential() -> ApiResult<CredentialResponse> {

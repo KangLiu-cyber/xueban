@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 application = { path = "../application" }
 axum = "0.8"
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 domain = { path = "../domain" }
 rmcp = { version = "0.15", features = ["transport-streamable-http-server"] }

@@ -130,6 +130,23 @@ pub struct Annotation {
     pub created_at: DateTime<Utc>,
 }
 
+/// 笔记图片附件（只挂 note）。二进制存宿主磁盘 `{user_id}/{uuid}`，
+/// 本实体只携带元数据；归属经 item → workspace join 校验（同 Item，
+/// 不直接存 user_id）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Attachment {
+    pub id: i64,
+    pub item_id: i64,
+    /// 原始文件名（仅展示用）。
+    pub filename: String,
+    /// 以魔数嗅探结果为准（白名单 png/jpeg/gif/webp）。
+    pub mime: String,
+    pub size_bytes: i64,
+    /// 磁盘文件名（服务端生成，无扩展名，防路径注入）。
+    pub uuid: String,
+    pub created_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

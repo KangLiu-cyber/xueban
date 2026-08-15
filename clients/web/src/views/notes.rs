@@ -243,6 +243,51 @@ async fn load_episode(state: AppState, quiz_count: RwSignal<u32>, c: usize, e: u
 
 // ---- 渲染 ----
 
+/// 笔记图片懒加载：markdown 渲染的 img 仅带 data-uid（附件 id），src 需
+/// 经鉴权 fetch → Blob → objectURL 补全（<img> 无法携带 Authorization
+/// header）；已有 src 的跳过，避免重渲染重复拉取。失败置 data-error，
+/// 由 CSS 展示占位，不阻塞笔记阅读。
+async fn load_note_images(item_id: i64) {
+    let Ok(list) = document().query_selector_all(&format!(
+        "[data-item-id=\"{}\"] img[data-uid]",
+        item_id
+    )) else {
+        return;
+    };
+    for i in 0..list.length() {
+        let Some(node) = list.item(i) else { continue };
+        let Ok(img) = node.dyn_into::<web_sys::HtmlImageElement>() else {
+            continue;
+        };
+        if img.has_attribute("src") {
+            continue;
+        }
+        let Some(uid) = img
+            .get_attribute("data-uid")
+            .and_then(|s| s.parse::<i64>().ok())
+        else {
+            continue;
+        };
+        match api::fetch_attachment(uid).await {
+            Ok(bytes) => {
+                let u8a = js_sys::Uint8Array::from(&bytes[..]);
+                if let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(&u8a.into()) {
+                    if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
+                        img.set_src(&url);
+                    }
+                }
+            }
+            Err(e) => {
+                // img 是 replaced element，伪元素不渲染，错误文本挂到父级 p。
+                if let Some(p) = img.parent_element() {
+                    p.set_attribute("data-error", &format!("图片加载失败：{}", e))
+                        .ok();
+                }
+            }
+        }
+    }
+}
+
 fn note_card(state: AppState, b: &ItemBundle) -> AnyView {
     let subject = match state.episode.get_untracked() {
         Some((c, _)) => state
@@ -257,6 +302,11 @@ fn note_card(state: AppState, b: &ItemBundle) -> AnyView {
     let html = crate::markdown::html_with_annotations(&md, &b.annotations);
     let mins = ((b.item.content.as_deref().unwrap_or("").len() as u32) / 1000).max(1);
     let item_id = b.item.id;
+    let img_uid = item_id;
+    // 挂载后（微任务时 DOM 已在树）异步拉取笔记图片。
+    spawn_local(async move {
+        load_note_images(img_uid).await;
+    });
     let title = b.item.name.clone();
     let date = fmt_date_ymd(b.item.created_at);
     (

@@ -146,12 +146,19 @@ pub async fn delete_annotation(
 }
 
 /// DELETE /api/v1/items/:id —— 删除目录/笔记，级联子树/批注/归属题目。
+/// 先收集整棵子树附件清磁盘文件（行由 DB ON DELETE CASCADE 兜底删），
+/// 再删 item；孤儿文件折衷见架构文档 §六。
 pub async fn delete_item(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Response {
-    match state.space.delete_item(auth.0.id, id).await {
+    let result = async {
+        state.attachments.delete_item_tree(auth.0.id, id).await?;
+        state.space.delete_item(auth.0.id, id).await
+    }
+    .await;
+    match result {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => ApiError::from(e).into_response(),
     }

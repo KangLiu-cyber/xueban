@@ -11,6 +11,7 @@ use axum::extract::rejection::JsonRejection;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use domain::error::Error;
+use std::error::Error as StdError;
 
 /// 领域错误的 HTTP 适配：处理器返回 `Result<T, ApiError>`。
 #[derive(Debug)]
@@ -69,6 +70,51 @@ where
                 StatusCode::BAD_REQUEST,
                 format!("请求体格式错误: {}", e.body_text()),
             )),
+        }
+    }
+}
+
+/// 原始字节请求体提取器：附件上传用（raw bytes，非 multipart）。
+/// 上传路由由 RequestBodyLimitLayer（tower-http limit）包住 Body，超过
+/// 上限在缓冲阶段以 LengthLimitError 终止，这里沿错误链识别并映射为
+/// 413；其余缓冲失败映射为 400。
+///
+/// 不走 `Bytes::from_request`：其拒绝值（BytesRejection）的负载字段是
+/// pub(crate)，外部无法解构取出限制错误；改为手动 `collect` 整个 Body。
+#[derive(Debug)]
+pub struct RawBody(pub Vec<u8>);
+
+impl<S> FromRequest<S> for RawBody
+where
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let body = axum::body::Body::from_request(req, state)
+            .await
+            .map_err(|_| error_response(StatusCode::BAD_REQUEST, "请求体读取失败"))?;
+        match http_body_util::BodyExt::collect(body).await {
+            Ok(collected) => Ok(RawBody(collected.to_bytes().to_vec())),
+            Err(e) => {
+                // axum::Error 的 source() 即内部 BoxError，从这里沿链找 LengthLimitError。
+                let mut source: Option<&(dyn StdError + 'static)> = e.source();
+                let too_large = loop {
+                    match source {
+                        Some(s) if s.is::<http_body_util::LengthLimitError>() => break true,
+                        Some(s) => source = s.source(),
+                        None => break false,
+                    }
+                };
+                if too_large {
+                    Err(error_response(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "请求体超过大小上限",
+                    ))
+                } else {
+                    Err(error_response(StatusCode::BAD_REQUEST, "请求体读取失败"))
+                }
+            }
         }
     }
 }

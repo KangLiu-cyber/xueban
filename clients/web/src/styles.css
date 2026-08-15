@@ -261,6 +261,16 @@ body {
 }
 .note-body h3 { font-size: 15px; font-weight: 700; margin: 18px 0 8px; }
 .note-body h4 { font-size: 13.5px; font-weight: 700; margin: 14px 0 6px; }
+.note-body .note-image { margin: 12px 0; }
+.note-body .note-image img {
+  max-width: 100%; border-radius: 8px; display: block;
+  background: var(--paper); min-height: 48px;
+}
+.note-body .note-image img[data-error] { visibility: hidden; }
+.note-body .note-image[data-error]::after {
+  content: attr(data-error); display: block; color: var(--muted);
+  font-size: 12.5px; padding: 10px; text-align: center;
+}
 
 .star-marker { color: var(--gold); font-weight: 700; margin-right: 4px; }
 

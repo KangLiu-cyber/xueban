@@ -17,7 +17,7 @@ use crate::practice::{
     Paper, PaperConfig, Question, QuestionType, QuizRecord, WrongItem, WrongStats,
 };
 use crate::skill::UserSkill;
-use crate::space::{Annotation, AnnotationAuthor, Item, ItemNode, Workspace};
+use crate::space::{Annotation, AnnotationAuthor, Attachment, Item, ItemNode, Workspace};
 
 #[async_trait]
 pub trait UserRepository {
@@ -100,6 +100,33 @@ pub trait AnnotationRepository {
     async fn update(&self, ann: &Annotation, user_id: i64) -> Result<bool>;
     /// 删除批注（须带归属校验：item 属于 user）。
     async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
+}
+
+#[async_trait]
+pub trait AttachmentRepository {
+    /// 插入附件元数据（二进制已落盘），返回落库后的新 id。
+    async fn insert(&self, attachment: &Attachment) -> Result<i64>;
+    /// 按 id + 归属查单个附件（item 属于 user，SQL 层 join 限定）。
+    async fn find_by_id(&self, id: i64, user_id: i64) -> Result<Option<Attachment>>;
+    /// 按笔记列出附件（携带归属）。
+    async fn list_by_item(&self, item_id: i64, user_id: i64) -> Result<Vec<Attachment>>;
+    /// 列出一棵 item 子树（含自身）的全部附件——删除笔记前收集磁盘文件用。
+    /// 携带归属：子树内全部节点属于 user（SQL 层 join 限定）。
+    async fn list_by_item_tree(&self, item_id: i64, user_id: i64) -> Result<Vec<Attachment>>;
+    /// 删除单个附件（须带归属校验），未命中返回 false。
+    async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
+    /// 按 id 批量删除附件行（不校验归属——由调用方先经子树收集校验；
+    /// 服务端删除笔记的级联清理用）。
+    async fn delete_by_ids(&self, ids: &[i64]) -> Result<()>;
+}
+
+/// 附件二进制存储端口：宿主磁盘 `{ATTACHMENTS_DIR}/{user_id}/{uuid}`。
+/// 磁盘 IO 与元数据仓储分离，删除时先删文件再删行。
+#[async_trait]
+pub trait AttachmentStorage {
+    async fn store(&self, user_id: i64, uuid: &str, bytes: &[u8]) -> Result<()>;
+    async fn load(&self, user_id: i64, uuid: &str) -> Result<Vec<u8>>;
+    async fn delete(&self, user_id: i64, uuid: &str) -> Result<()>;
 }
 
 #[async_trait]
@@ -227,6 +254,15 @@ pub struct NewAnnotation {
     pub author: AnnotationAuthor,
     pub anchor: String,
     pub text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewAttachment {
+    pub item_id: i64,
+    pub filename: String,
+    pub mime: String,
+    pub size_bytes: i64,
+    pub uuid: String,
 }
 
 #[derive(Debug, Clone)]

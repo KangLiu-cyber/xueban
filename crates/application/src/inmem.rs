@@ -5,6 +5,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -13,13 +14,13 @@ use domain::error::Error;
 use domain::event::Event;
 use domain::identity::{Token, TokenPurpose, User};
 use domain::ports::{
-    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
-    UserRepository, WorkspaceRepository, WrongItemRepository,
+    AnnotationRepository, AttachmentRepository, AttachmentStorage, CredentialIssuer, EventStore,
+    ItemRepository, PaperRepository, PasswordHasher, QuestionRepository, QuizRecordRepository,
+    SkillRepository, TokenRepository, UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 use domain::practice::{Paper, Question, QuestionType, QuizRecord, WrongItem, WrongStats};
 use domain::skill::UserSkill;
-use domain::space::{Annotation, Item, ItemKind, ItemNode, Workspace};
+use domain::space::{Annotation, Attachment, Item, ItemKind, ItemNode, Workspace};
 
 fn now() -> DateTime<Utc> {
     Utc::now()
@@ -183,7 +184,13 @@ impl WorkspaceRepository for InMemoryWorkspaceRepository {
 }
 
 pub struct InMemoryItemRepository {
-    items: Mutex<HashMap<i64, Item>>,
+    /// pub 供附件测试直接构造父子关系（领域测试只读，不破坏封装防线——
+    /// 归属校验仍在应用层完成）。
+    pub items: Mutex<HashMap<i64, Item>>,
+    /// 可选 workspace 注册表：注入后 `find_by_id` 按「item 所属空间属于 user」
+    /// 过滤，忠实模拟 Pg 实现的 SQL join 归属防线（AttachmentService 无
+    /// workspace 依赖，归属只靠 item 仓储；缺省构造不拦截，保持旧语义）。
+    workspaces: Option<Arc<InMemoryWorkspaceRepository>>,
     next_id: AtomicI64,
 }
 
@@ -191,6 +198,7 @@ impl Default for InMemoryItemRepository {
     fn default() -> Self {
         Self {
             items: Mutex::new(HashMap::new()),
+            workspaces: None,
             // id 从 1 开始，与 PG bigserial 语义一致；0 保留为未插入占位
             //（create 防环检查以占位 id 0 调用 assert_no_cycle，不能与真实节点冲突）。
             next_id: AtomicI64::new(1),
@@ -199,6 +207,28 @@ impl Default for InMemoryItemRepository {
 }
 
 impl InMemoryItemRepository {
+    /// 注入 workspace 注册表：`find_by_id` 开启归属过滤（对齐 Pg 的 join）。
+    pub fn with_workspaces(workspaces: Arc<InMemoryWorkspaceRepository>) -> Self {
+        Self {
+            items: Mutex::new(HashMap::new()),
+            workspaces: Some(workspaces),
+            next_id: AtomicI64::new(1),
+        }
+    }
+
+    /// workspace 是否属于 user（未注入注册表时不过滤）。
+    fn owns_workspace(&self, workspace_id: i64, user_id: i64) -> bool {
+        let Some(workspaces) = &self.workspaces else {
+            return true;
+        };
+        workspaces
+            .workspaces
+            .lock()
+            .unwrap()
+            .get(&workspace_id)
+            .is_some_and(|w| w.user_id == user_id)
+    }
+
     fn tree(&self, items: &[Item]) -> Vec<ItemNode> {
         fn build(parent_id: Option<i64>, items: &[Item]) -> Vec<ItemNode> {
             let mut children: Vec<ItemNode> = items
@@ -232,9 +262,15 @@ impl ItemRepository for InMemoryItemRepository {
         Ok(())
     }
 
-    // item 不存 user_id，归属校验由应用层查 Workspace 完成。
-    async fn find_by_id(&self, id: i64, _user_id: i64) -> domain::Result<Option<Item>> {
-        Ok(self.items.lock().unwrap().get(&id).cloned())
+    // item 不存 user_id；注入 workspaces 后按空间归属过滤（对齐 Pg SQL join 防线）。
+    async fn find_by_id(&self, id: i64, user_id: i64) -> domain::Result<Option<Item>> {
+        Ok(self
+            .items
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .filter(|i| self.owns_workspace(i.workspace_id, user_id)))
     }
 
     // item 不存 user_id，归属校验由应用层查 Workspace 完成（与 Pg 实现 SQL join 的防线等价）。
@@ -680,6 +716,187 @@ impl SkillRepository for InMemorySkillRepository {
             None => Ok(false),
         }
     }
+}
+
+/// 附件元数据内存仓储：item 归属由应用层 read_item 完成（与 Pg 实现
+/// SQL join 的防线等价）。`list_by_item_tree` 经 BFS 遍历 parent_id 收集
+/// 整棵子树；未注入 item 仓储时退化为只含自身（无子树可展开）。
+pub struct InMemoryAttachmentRepository {
+    attachments: Mutex<HashMap<i64, Attachment>>,
+    items: Option<Arc<InMemoryItemRepository>>,
+    next_id: AtomicI64,
+}
+
+impl Default for InMemoryAttachmentRepository {
+    fn default() -> Self {
+        Self {
+            attachments: Mutex::new(HashMap::new()),
+            items: None,
+            next_id: AtomicI64::new(0),
+        }
+    }
+}
+
+impl InMemoryAttachmentRepository {
+    /// 注入 item 仓储引用：子树附件收集按真实父子关系展开（对齐 Pg 的 WITH RECURSIVE）。
+    pub fn with_items(items: Arc<InMemoryItemRepository>) -> Self {
+        Self {
+            attachments: Mutex::new(HashMap::new()),
+            items: Some(items),
+            next_id: AtomicI64::new(0),
+        }
+    }
+
+    fn subtree_ids(&self, root: i64) -> Vec<i64> {
+        let Some(items) = &self.items else {
+            return vec![root];
+        };
+        let map = items.items.lock().unwrap();
+        let mut ids = vec![root];
+        let mut i = 0;
+        while i < ids.len() {
+            let parent = ids[i];
+            ids.extend(
+                map.values()
+                    .filter(|it| it.parent_id == Some(parent))
+                    .map(|it| it.id),
+            );
+            i += 1;
+        }
+        ids
+    }
+
+    /// item 是否属于 user：经 item → workspace 归属链校验（对齐 Pg SQL join）。
+    /// 未注入 item 仓储时不拦截（退化语义：归属由调用方另行保证）。
+    fn item_owned(&self, item_id: i64, user_id: i64) -> bool {
+        let Some(items) = &self.items else {
+            return true;
+        };
+        let Some(item) = items.items.lock().unwrap().get(&item_id).cloned() else {
+            return false;
+        };
+        items.owns_workspace(item.workspace_id, user_id)
+    }
+}
+
+#[async_trait]
+impl AttachmentRepository for InMemoryAttachmentRepository {
+    async fn insert(&self, attachment: &Attachment) -> domain::Result<i64> {
+        let id = take_id(&self.next_id);
+        let mut a = attachment.clone();
+        a.id = id;
+        self.attachments.lock().unwrap().insert(id, a);
+        Ok(id)
+    }
+
+    async fn find_by_id(&self, id: i64, user_id: i64) -> domain::Result<Option<Attachment>> {
+        // 归属经 item → workspace 链校验（对齐 Pg 实现 SQL join 的防线）。
+        Ok(self
+            .attachments
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+            .filter(|a| self.item_owned(a.item_id, user_id)))
+    }
+
+    async fn list_by_item(&self, item_id: i64, _user_id: i64) -> domain::Result<Vec<Attachment>> {
+        let mut list: Vec<Attachment> = self
+            .attachments
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|a| a.item_id == item_id)
+            .cloned()
+            .collect();
+        list.sort_by_key(|a| a.id);
+        Ok(list)
+    }
+
+    async fn list_by_item_tree(
+        &self,
+        item_id: i64,
+        _user_id: i64,
+    ) -> domain::Result<Vec<Attachment>> {
+        // 归属校验由应用层 read_item 完成（与 Pg 实现 SQL join 的防线等价）。
+        let ids = self.subtree_ids(item_id);
+        let mut list: Vec<Attachment> = self
+            .attachments
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|a| ids.contains(&a.item_id))
+            .cloned()
+            .collect();
+        list.sort_by_key(|a| a.id);
+        Ok(list)
+    }
+
+    async fn delete(&self, id: i64, _user_id: i64) -> domain::Result<bool> {
+        // 归属校验由应用层 find_by_id 完成（与 Pg 实现 SQL user_id 守卫的防线等价）。
+        let mut map = self.attachments.lock().unwrap();
+        if map.remove(&id).is_some() {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    async fn delete_by_ids(&self, ids: &[i64]) -> domain::Result<()> {
+        // 不校验归属——由调用方先经子树收集校验（对齐 Pg 实现的语义）。
+        let mut map = self.attachments.lock().unwrap();
+        for id in ids {
+            map.remove(id);
+        }
+        Ok(())
+    }
+}
+
+/// 附件二进制内存替身：key (user_id, uuid)，delete 幂等（文件缺失不算错）。
+#[derive(Default)]
+pub struct InMemoryAttachmentStorage {
+    pub files: Mutex<HashMap<(i64, String), Vec<u8>>>,
+}
+
+#[async_trait]
+impl AttachmentStorage for InMemoryAttachmentStorage {
+    async fn store(&self, user_id: i64, uuid: &str, bytes: &[u8]) -> domain::Result<()> {
+        self.files
+            .lock()
+            .unwrap()
+            .insert((user_id, uuid.to_owned()), bytes.to_vec());
+        Ok(())
+    }
+
+    async fn load(&self, user_id: i64, uuid: &str) -> domain::Result<Vec<u8>> {
+        self.files
+            .lock()
+            .unwrap()
+            .get(&(user_id, uuid.to_owned()))
+            .cloned()
+            .ok_or_else(|| Error::Storage("附件文件缺失".to_owned()))
+    }
+
+    async fn delete(&self, user_id: i64, uuid: &str) -> domain::Result<()> {
+        self.files
+            .lock()
+            .unwrap()
+            .remove(&(user_id, uuid.to_owned()));
+        Ok(())
+    }
+}
+
+/// 测试辅助：向内存 workspace 仓储插入一个空间，返回落库后的 id。
+pub async fn insert_workspace(repo: &InMemoryWorkspaceRepository, user_id: i64, name: &str) -> i64 {
+    let ws = Workspace {
+        id: 0,
+        user_id,
+        name: name.to_owned(),
+        exam_goal: String::new(),
+        exam_date: None,
+        created_at: now(),
+    };
+    repo.insert(&ws).await.unwrap()
 }
 
 /// 测试辅助：向内存 item 仓储插入一个节点，返回落库后的 id。

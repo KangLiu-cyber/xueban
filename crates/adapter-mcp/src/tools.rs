@@ -11,13 +11,16 @@ use std::sync::Arc;
 
 use application::agent::{AgentCapability, AgentStatus, QuestionInput};
 use axum::http::request::Parts;
+use base64::Engine as _;
 use chrono::{DateTime, NaiveDate, Utc};
 use domain::error::Error;
 use domain::event::{Event, EventAction};
 use domain::identity::User;
 use domain::practice::{Answer, QuestionType};
 use domain::skill::Skill;
-use domain::space::{Annotation, AnnotationAuthor, Creator, Item, ItemKind, ItemNode, Workspace};
+use domain::space::{
+    Annotation, AnnotationAuthor, Attachment, Creator, Item, ItemKind, ItemNode, Workspace,
+};
 use rmcp::ErrorData;
 use rmcp::handler::server::common::Extension;
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -325,6 +328,31 @@ impl McpService {
             .map(Json)
             .map_err(map_err)
     }
+
+    /// UploadAttachment（Agent 入口）：笔记图片上传。二进制经 base64 传入，
+    /// 服务端解码后走与 REST 相同的校验（魔数嗅探 + 10MB 上限 + 归属）。
+    #[tool(
+        name = "upload_attachment",
+        title = "上传笔记图片",
+        description = "向笔记上传图片附件（png/jpeg/gif/webp，≤10MB）：二进制以 base64 传入，服务端做魔数嗅探与归属校验。返回附件 id 与读取 URL（/api/v1/attachments/{id}，带登录态访问）。用于在笔记正文中以 ![alt](url) 引用图片。"
+    )]
+    async fn upload_attachment(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(input): Parameters<UploadAttachmentInput>,
+    ) -> Result<Json<AttachmentDto>, ErrorData> {
+        let user = self.user(&parts)?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&input.content_base64)
+            .map_err(|_| map_err(Error::Invalid("图片内容 base64 解码失败".to_owned())))?;
+        self.state
+            .attachments
+            .upload(user.id, input.item_id, input.filename, &bytes)
+            .await
+            .map(AttachmentDto::from)
+            .map(Json)
+            .map_err(map_err)
+    }
 }
 
 #[tool_handler]
@@ -564,6 +592,24 @@ pub struct GetSkillInput {
     pub name: String,
 }
 
+/// upload_attachment 入参：二进制以 base64 传输（JSON-RPC 无二进制通道）。
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct UploadAttachmentInput {
+    /// 目标笔记 id（仅 note 可挂附件）。
+    pub item_id: i64,
+    /// 原始文件名（仅展示用；缺省按嗅探 mime 给默认）。
+    pub filename: String,
+    /// 图片文件内容的 base64（标准编码；解码后 ≤10MB）。
+    pub content_base64: String,
+}
+
+/// upload_attachment 出参：附件 id + 读取 URL（前端 fetch-blob 渲染用）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AttachmentDto {
+    pub id: i64,
+    pub url: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentStatusDto {
     pub workspaces: Vec<WorkspaceDto>,
@@ -744,6 +790,15 @@ impl From<AgentStatus> for AgentStatusDto {
         Self {
             workspaces: v.workspaces.into_iter().map(WorkspaceDto::from).collect(),
             recent_events: v.recent_events.into_iter().map(EventDto::from).collect(),
+        }
+    }
+}
+
+impl From<Attachment> for AttachmentDto {
+    fn from(v: Attachment) -> Self {
+        Self {
+            id: v.id,
+            url: format!("/api/v1/attachments/{}", v.id),
         }
     }
 }

@@ -1,6 +1,8 @@
 //! 极简 Markdown 渲染器：AI 生成的笔记内容（标题 / 段落 / 列表 / 表格 /
-//! 引用要点 / 粗斜体 / 行内代码）渲染为 HTML 字符串。
+//! 引用要点 / 粗斜体 / 行内代码 / 附件图片）渲染为 HTML 字符串。
 //! 输入先转义再套标签，避免注入；行内格式用顺序扫描，不做嵌套解析。
+//! 图片仅放行 /api/v1/attachments/ 白名单（见 parse_image_line），src 由
+//! 视图经鉴权 fetch → blob → objectURL 补全。
 
 pub fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -220,6 +222,18 @@ fn render_blockquote(lines: &[&str]) -> (String, usize) {
     )
 }
 
+/// 解析块级图片 `![alt](url)`，返回 (alt, 附件 id)。
+/// URL 白名单仅放行 /api/v1/attachments/{id}（本服务附件，走鉴权渲染）；
+/// 外链或未知前缀返回 None，调用方将其转义为纯文本段落，不渲染 img
+/// （防外链追踪与不可控内容）。
+fn parse_image_line(t: &str) -> Option<(String, i64)> {
+    let rest = t.strip_prefix("![")?;
+    let (alt, rest) = rest.split_once("](")?;
+    let url = rest.strip_suffix(')')?;
+    let id = url.strip_prefix("/api/v1/attachments/")?.parse::<i64>().ok()?;
+    Some((alt.trim().to_owned(), id))
+}
+
 /// 在渲染后的 HTML 中注入批注高亮 span。锚点按 escape_html 后的文本查找
 /// （渲染 HTML 中的锚点已是转义形式）；带 cursor 跟踪，跳过来源顺序中未
 /// 找到的锚点，避免重复注入或跨标签误配。
@@ -286,6 +300,19 @@ pub fn render_markdown(src: &str) -> String {
             i += n;
             continue;
         }
+        if t.starts_with("![") {
+            // 白名单内：渲染占位 img（data-uid 携带附件 id，src 由视图经
+            // 鉴权 fetch → blob 后补上）；白名单外落回段落按纯文本转义。
+            if let Some((alt, id)) = parse_image_line(t) {
+                out.push_str(&format!(
+                    "<p class=\"note-image\"><img data-uid=\"{}\" alt=\"{}\" loading=\"lazy\"></p>",
+                    id,
+                    escape_html(&alt)
+                ));
+                i += 1;
+                continue;
+            }
+        }
         if t.starts_with("- ") || t.starts_with("* ") {
             let (html, n) = render_list(&lines[i..], false);
             out.push_str(&html);
@@ -322,6 +349,7 @@ pub fn render_markdown(src: &str) -> String {
                 || l.starts_with(">")
                 || l.starts_with("- ")
                 || l.starts_with("* ")
+                || l.starts_with("![")
             {
                 break;
             }
@@ -333,4 +361,38 @@ pub fn render_markdown(src: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_in_whitelist_renders_placeholder() {
+        assert_eq!(
+            render_markdown("![示意图](/api/v1/attachments/42)"),
+            "<p class=\"note-image\"><img data-uid=\"42\" alt=\"示意图\" loading=\"lazy\"></p>"
+        );
+    }
+
+    #[test]
+    fn image_alt_is_escaped() {
+        let html = render_markdown("![<script>](/api/v1/attachments/1)");
+        assert!(html.contains("alt=\"&lt;script&gt;\""));
+        assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn image_outside_whitelist_is_plain_text() {
+        let html = render_markdown("![外链](https://evil.example/x.png)");
+        assert!(!html.contains("<img"));
+        assert!(html.contains("![外链](https://evil.example/x.png)"));
+    }
+
+    #[test]
+    fn image_breaks_paragraph_collection() {
+        let html = render_markdown("一段文字\n![图](/api/v1/attachments/7)");
+        assert!(html.contains("<p>一段文字</p>"));
+        assert!(html.contains("data-uid=\"7\""));
+    }
 }

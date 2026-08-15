@@ -4,6 +4,7 @@
 //! 强制 user_id / workspace 归属条件（隔离第二道防线）；事件只追加不修改。
 //! 密码哈希 argon2id；凭证签发为随机 32 字节 Base62（usr_ 前缀）。
 
+mod attachments;
 mod codec;
 mod events;
 mod identity;
@@ -11,6 +12,7 @@ mod practice;
 mod skill;
 mod space;
 
+pub use attachments::{FsAttachmentStorage, PgAttachmentRepository};
 pub use events::PgEventStore;
 pub use identity::{
     Argon2PasswordHasher, PgTokenRepository, PgUserRepository, RandomCredentialIssuer,
@@ -23,12 +25,16 @@ pub use space::{PgAnnotationRepository, PgItemRepository, PgWorkspaceRepository}
 
 use domain::error::{Error, Result};
 
-/// 统一 SQLx 错误 → 领域错误：唯一约束冲突 → Conflict，其余 → Storage。
+/// 统一 SQLx 错误 → 领域错误：外键冲突（如并发删 item）→ NotFound，
+/// 唯一约束冲突 → Conflict，其余 → Storage。
 pub fn map_sqlx_error(e: sqlx::Error) -> Error {
-    if let sqlx::Error::Database(db) = &e
-        && db.is_unique_violation()
-    {
-        return Error::Conflict("记录已存在".to_owned());
+    if let sqlx::Error::Database(db) = &e {
+        if db.is_foreign_key_violation() {
+            return Error::NotFound("内容不存在".to_owned());
+        }
+        if db.is_unique_violation() {
+            return Error::Conflict("记录已存在".to_owned());
+        }
     }
     Error::Storage(e.to_string())
 }

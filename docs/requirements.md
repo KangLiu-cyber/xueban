@@ -1,11 +1,10 @@
-# 超级学习助手 · 需求文档 v7.3（最终版）
+# 超级学习助手 · 需求文档 v7.2（最终版）
 
 日期：2026-08-15 ｜ 状态：定稿
 配套原型：
 - 桌面端：`ui-mockup/desktop-prototype-v3-soft.html`
 - 安卓端：`ui-mockup/android-prototype-v1.html`（v7.2 新增，含折叠屏适配）
 
-v7.3 变更：新增客户端更新机制（第十三章）：发布新版本后用户无需重新下载安装包，客户端启动时检查更新并提示（安卓端自建 OTA，桌面端 Tauri updater，覆盖 Linux / Windows）。
 v7.2 变更：新增安卓端设计（当前只设计安卓端），含折叠屏适配策略。
 v7.1 变更：登录改为账号密码并支持注册（为订阅计费做准备）；考试目标改为手写填写（不做枚举下拉）；补充 Agent 凭证与考试目标的"再次入口"。
 
@@ -162,17 +161,20 @@ Agent 读取事件 → 复盘诊断 → 生成补充内容写回系统
 | workspaces | id, user_id, name（一件事一个空间）, exam_goal（手写文本）, exam_date |
 | items | id, workspace_id, parent_id（可自由嵌套）, kind, name, content, source（ai/user） |
 | annotations | id, item_id, user_id, anchor, text, source（ai/user） |
+| attachments | id, item_id, filename, mime, size_bytes, uuid, created_at |
 | events | id, user_id, item_id, action（annotate/answer/reveal/wrong）, payload, created_at |
 
 - kind：note（笔记）/ quiz（习题），可扩展新类型。
-- items 删除级联：删除目录/笔记时，其子树、批注与归属习题一并删除（`DELETE /api/v1/items/:id`）。
+- items 删除级联：删除目录/笔记时，其子树、批注、归属习题与附件一并删除（`DELETE /api/v1/items/:id`）。附件二进制存宿主磁盘（`ATTACHMENTS_DIR/{user_id}/{uuid}`），表行随 item 级联删除，磁盘文件由服务端先收集子树附件再删除；崩溃窗口可能留下无表行引用的孤儿文件，无害且不占数据库空间。
 - 存储自由创建；**UI 呈现方式不与存储结构绑定，UI/UX 另行设计**（已定 v3 柔和版）。
 
 ## 九、MCP 接口
 
 bootstrap（能力下发）/ create_workspace / create_item / write_item / read_item /
 list_items（出参 `{items: [...]}`）/ add_annotation / save_questions（出参 `{ids: [...]}`）/
-get_events（出参 `{events: [...]}`）/ report_status / get_skill。
+get_events（出参 `{events: [...]}`）/ report_status / get_skill / upload_attachment。
+
+- upload_attachment：Agent 为笔记上传图片附件（笔记正文 Markdown 图片由此进入系统）。入参 `{item_id, filename, content_base64}`（二进制经 base64 传输），出参 `{id, url: "/api/v1/attachments/{id}"}`；Agent 用 `![alt](url)` 写入笔记正文，客户端渲染时带 token 拉取展示。单文件 ≤ 10MB，仅接受 png/jpeg/gif/webp（魔数嗅探校验，拒绝 svg 防脚本注入）。
 
 - Agent 持 token 接入时，服务端自动下发 Skill、提示词、MCP 工具清单与 **Skill 目录全量内容**（`bootstrap` 出参 `skills: [{name, description, script}]`，含脚本，Agent 首次接入即自动安装；版本号随能力包升级）。Skill 目录 = 内置 + 用户自定义合并，同名时用户自定义覆盖内置（§4.2）。
 - skill 可随时按名经 `get_skill` 重新拉取（更新/修复安装），入参 `{name}`，出参 `{name, description, script}`；**用户自定义优先，无同名自定义时回退内置目录**。
@@ -247,61 +249,6 @@ get_events（出参 `{events: [...]}`）/ report_status / get_skill。
 - 布局分支用 WindowSizeClass（Compact 单栏 / Medium 及以上双栏）。
 - 本地缓存 Room，登录态与 token 存 EncryptedSharedPreferences；MCP 交互走后端，不在端上直连。
 
-## 十三、客户端更新机制（v7.3 新增）
-
-目标：发布新版本后，用户无需回到官网重新下载安装包；客户端启动时静默检查更新，发现新版本即提示，用户确认后在 App 内完成下载与安装。
-
-### 13.1 检查时机
-
-- 客户端启动时异步检查一次更新清单；网络失败或清单解析失败一律静默忽略，不阻塞正常使用，也不弹出错误提示。
-- 发现新版本（桌面端比较版本号、安卓端比较 versionCode 高于当前）时弹出更新提示框：新版本号、更新说明、[立即更新] / [稍后再说]；标记为强制更新（mandatory）的版本只提供 [立即更新]。
-- 选"稍后再说"后本次启动不再提示；下次启动重新检查。
-
-### 13.2 更新清单接口
-
-- 服务端提供公开接口 `GET /api/v1/update`（无需登录），返回兼容桌面端 Tauri 静态清单格式的 JSON，同时携带安卓端所需字段：
-
-```json
-{
-  "version": "0.2.0",
-  "notes": "更新说明…",
-  "pub_date": "2026-08-15T10:00:00Z",
-  "mandatory": false,
-  "platforms": {
-    "android":        { "version_code": 200, "url": "https://…/xueban-0.2.0.apk", "sha256": "…" },
-    "linux-x86_64":   { "url": "https://…/xueban_0.2.0_amd64.AppImage", "signature": "…", "sha256": "…" },
-    "windows-x86_64": { "url": "https://…/xueban_0.2.0_x64-setup.exe", "signature": "…", "sha256": "…" }
-  }
-}
-```
-
-- 清单数据源为 GitHub Release 附件 `update.json`：CI 在打版本 tag（v*）时生成并上传；服务端启动时拉取、短 TTL 缓存（仓库公开，无需凭证）。
-- 桌面端 Tauri updater 只读取自身平台条目（signature / url）；安卓端读取 `android` 条目（version_code / sha256 / url）；两端共用同一清单接口。
-
-### 13.3 桌面端（Tauri，Linux / Windows）
-
-- 使用官方 tauri-plugin-updater：更新包用私钥签名（私钥存 CI 密钥，公钥内置在客户端配置），下载后先校验签名再安装，防篡改。
-- 覆盖 Linux（.deb / AppImage）与 Windows（NSIS 安装包）；**macOS 暂不做**（分发需付费开发者账号，当前不值得）。
-- 更新包由 CI 在打版本 tag 时构建并上传至 GitHub Release。
-
-### 13.4 安卓端（自建 OTA，暂不上商店）
-
-- 当前不通过应用商店分发，采用自建 OTA：启动时对比 versionCode → 弹更新提示 → 下载 APK（显示进度）→ sha256 校验 → 调用系统安装器安装；首次安装需引导用户开启"安装未知应用"权限。
-- 发布新版本必须使用**固定的 release 签名密钥**（存 CI 密钥）：同一签名下安装包才能覆盖升级，否则用户只能卸载重装。将来上商店后可切换为商店渠道更新。
-- APK 与清单由 CI 在打版本 tag 时构建并上传至 GitHub Release。
-
-### 13.5 发布流程
-
-```
-打 v* 标签 → CI 构建桌面端（Linux/Windows）与安卓端 release 包
-         → 生成 update.json（版本号、sha256、签名、下载地址）
-         → 上传 GitHub Release → 用户客户端下次启动自动提示更新
-```
-
-### 13.6 暂不做
-
-静默安装（后台下载后自动安装）、热更新（代码增量替换）、桌面端 v1 的强制更新策略、macOS 端更新。
-
-## 十四、下一步
+## 十三、下一步
 
 需求定稿 → P0 开发（优先：注册 / 登录 / 用户 token / MCP 接入与能力下发）→ 桌面端 UI 实现 → 安卓端 UI 实现（按 v1 原型）→ 闭环联调。
