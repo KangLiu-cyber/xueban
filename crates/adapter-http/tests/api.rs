@@ -382,6 +382,43 @@ async fn annotation_lifecycle() {
     assert_eq!(bundle["item"]["id"], json!(item_id));
     assert_eq!(bundle["annotations"].as_array().expect("应为数组").len(), 1);
 
+    // 编辑自己的批注文本，GET 反映新文本。
+    let (status, edited) = send(
+        &app,
+        Method::PUT,
+        &format!("/api/v1/annotations/{ann_id}"),
+        Some(&token),
+        Some(json!({ "text": "已修订的易错点" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "编辑批注失败: {edited}");
+    assert_eq!(edited["id"], json!(ann_id));
+    assert_eq!(edited["text"], json!("已修订的易错点"));
+    let (status, bundle) = send(
+        &app,
+        Method::GET,
+        &format!("/api/v1/items/{item_id}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let annotations = bundle["annotations"].as_array().expect("应为数组");
+    assert_eq!(annotations.len(), 1);
+    assert_eq!(annotations[0]["text"], json!("已修订的易错点"));
+
+    // 他人不能编辑（归属校验）。
+    let (other_token, _) = register(&app, "ann2").await;
+    let (status, _) = send(
+        &app,
+        Method::PUT,
+        &format!("/api/v1/annotations/{ann_id}"),
+        Some(&other_token),
+        Some(json!({ "text": "越权" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "他人编辑应 404");
+
     // 删除 + 幂等性边界：重复删除 404。
     let (status, _) = send(
         &app,

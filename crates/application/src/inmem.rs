@@ -323,6 +323,17 @@ impl AnnotationRepository for InMemoryAnnotationRepository {
         Ok(id)
     }
 
+    async fn find_by_id(&self, id: i64, user_id: i64) -> domain::Result<Option<Annotation>> {
+        // 归属校验由应用层完成（与 Pg 实现 SQL join 的防线等价）。
+        Ok(self
+            .annotations
+            .lock()
+            .unwrap()
+            .get(&id)
+            .filter(|a| a.user_id == user_id)
+            .cloned())
+    }
+
     async fn list_by_item(&self, item_id: i64, _user_id: i64) -> domain::Result<Vec<Annotation>> {
         // 归属校验由应用层 read_item 完成（与 Pg 实现 SQL join 的防线等价）。
         let mut list: Vec<Annotation> = self
@@ -335,6 +346,16 @@ impl AnnotationRepository for InMemoryAnnotationRepository {
             .collect();
         list.sort_by_key(|a| a.id);
         Ok(list)
+    }
+
+    // 归属校验由应用层 find_by_id 完成（与 Pg 实现 SQL user_id 守卫的防线等价）。
+    async fn update(&self, ann: &Annotation, user_id: i64) -> domain::Result<bool> {
+        let mut map = self.annotations.lock().unwrap();
+        let hit = map.get(&ann.id).is_some_and(|a| a.user_id == user_id);
+        if hit {
+            map.get_mut(&ann.id).unwrap().text = ann.text.clone();
+        }
+        Ok(hit)
     }
 
     async fn delete(&self, id: i64, user_id: i64) -> domain::Result<bool> {

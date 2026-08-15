@@ -113,6 +113,26 @@ pub async fn add_annotation(
     ))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AnnotationEditInput {
+    pub text: String,
+}
+
+/// PUT /api/v1/annotations/:id —— 编辑批注文本（仅我的批注，AI 批注由用例拒绝）。
+pub async fn edit_annotation(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<i64>,
+    JsonBody(body): JsonBody<AnnotationEditInput>,
+) -> Result<Json<Annotation>, ApiError> {
+    Ok(Json(
+        state
+            .space
+            .edit_annotation(auth.0.id, id, body.text)
+            .await?,
+    ))
+}
+
 /// DELETE /api/v1/annotations/:id —— 批注是独立资源，id 走自己的路由。
 pub async fn delete_annotation(
     State(state): State<AppState>,

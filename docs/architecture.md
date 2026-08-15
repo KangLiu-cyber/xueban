@@ -346,6 +346,7 @@ events (
 | 内容 | `GET /api/v1/items/:id` | ReadNote |
 | 内容 | `DELETE /api/v1/items/:id` | ManageContent（删除，级联子树/批注/归属题目） |
 | 批注 | `POST /api/v1/items/:id/annotations` | Annotate |
+| 批注 | `PUT /api/v1/annotations/:id` | Annotate（编辑文本，仅我的批注；AI 批注拒绝） |
 | 批注 | `DELETE /api/v1/annotations/:id` | Annotate（删除） |
 | 刷题 | `GET /api/v1/quiz/questions?scope=` | DrawQuestions |
 | 刷题 | `POST /api/v1/quiz/answer` | SubmitAnswer |

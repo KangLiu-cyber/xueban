@@ -285,6 +285,29 @@ where
         Ok(ann)
     }
 
+    /// 编辑批注文本：仅「我的批注」可编辑（AI 批注只读），归属校验由仓储完成。
+    pub async fn edit_annotation(
+        &self,
+        user_id: i64,
+        annotation_id: i64,
+        text: String,
+    ) -> Result<Annotation> {
+        let mut ann = self
+            .annotations
+            .find_by_id(annotation_id, user_id)
+            .await?
+            .ok_or_else(|| Error::NotFound("批注不存在".to_owned()))?;
+        if ann.author != AnnotationAuthor::User {
+            return Err(Error::Invalid("AI 批注不可编辑".to_owned()));
+        }
+        ann.text = text;
+        let hit = self.annotations.update(&ann, user_id).await?;
+        if !hit {
+            return Err(Error::NotFound("批注不存在".to_owned()));
+        }
+        Ok(ann)
+    }
+
     /// 删除批注（归属校验由仓储完成，未命中报 NotFound）。
     pub async fn delete_annotation(&self, user_id: i64, annotation_id: i64) -> Result<()> {
         let hit = self.annotations.delete(annotation_id, user_id).await?;
@@ -656,6 +679,62 @@ mod tests {
         // 事件已记录。
         let events = s.events.list_by_user(1, 10).await.unwrap();
         assert_eq!(events[0].action, EventAction::Annotate);
+    }
+
+    #[tokio::test]
+    async fn edit_annotation_updates_own_user_annotation_only() {
+        let s = svc();
+        let ws = s
+            .create_workspace(1, "备考".into(), "目标".into(), None)
+            .await
+            .unwrap();
+        let note = s
+            .create_item(
+                1,
+                ws.id,
+                None,
+                ItemKind::Note,
+                "笔记".into(),
+                Some("正文".into()),
+            )
+            .await
+            .unwrap();
+        let mine = s
+            .annotate(
+                1,
+                note.id,
+                "正文".into(),
+                "原内容".into(),
+                AnnotationAuthor::User,
+            )
+            .await
+            .unwrap();
+        let ai = s
+            .annotate(
+                1,
+                note.id,
+                "正文".into(),
+                "AI 批注".into(),
+                AnnotationAuthor::Ai,
+            )
+            .await
+            .unwrap();
+
+        // 编辑自己的批注成功。
+        let edited = s
+            .edit_annotation(1, mine.id, "新内容".into())
+            .await
+            .unwrap();
+        assert_eq!(edited.text, "新内容");
+        assert_eq!(
+            s.list_annotations(1, note.id).await.unwrap()[0].text,
+            "新内容"
+        );
+        // AI 批注不可编辑。
+        assert!(s.edit_annotation(1, ai.id, "x".into()).await.is_err());
+        // 他人/不存在的批注不可达（NotFound）。
+        assert!(s.edit_annotation(2, mine.id, "x".into()).await.is_err());
+        assert!(s.edit_annotation(1, 999_999, "x".into()).await.is_err());
     }
 
     #[tokio::test]

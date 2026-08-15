@@ -91,8 +91,12 @@ pub trait ItemRepository {
 pub trait AnnotationRepository {
     /// 插入批注，返回落库后的新 id。
     async fn insert(&self, ann: &Annotation) -> Result<i64>;
+    /// 按 id + 归属查单个批注（编辑前校验作者用）。
+    async fn find_by_id(&self, id: i64, user_id: i64) -> Result<Option<Annotation>>;
     /// 按笔记列出批注（携带归属：item 属于 user，SQL 层 join 限定）。
     async fn list_by_item(&self, item_id: i64, user_id: i64) -> Result<Vec<Annotation>>;
+    /// 编辑批注文本（须带归属校验：批注属于 user），未命中返回 false。
+    async fn update(&self, ann: &Annotation, user_id: i64) -> Result<bool>;
     /// 删除批注（须带归属校验：item 属于 user）。
     async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
 }

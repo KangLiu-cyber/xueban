@@ -32,7 +32,7 @@ use application::space::SpaceService;
 use application::wrong::WrongService;
 use axum::Router;
 use axum::middleware as axum_mw;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{get, post, put};
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
     PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
@@ -145,7 +145,10 @@ pub fn router(state: AppState) -> Router {
             get(space::read_item).delete(space::delete_item),
         )
         .route("/items/{id}/annotations", post(space::add_annotation))
-        .route("/annotations/{id}", delete(space::delete_annotation))
+        .route(
+            "/annotations/{id}",
+            put(space::edit_annotation).delete(space::delete_annotation),
+        )
         .route("/quiz/questions", get(quiz::draw))
         .route("/quiz/answer", post(quiz::answer))
         .route("/wrong", get(wrong::list))

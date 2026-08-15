@@ -353,6 +353,23 @@ impl AnnotationRepository for PgAnnotationRepository {
         row.try_get::<i64, _>("id").map_err(map_sqlx_error)
     }
 
+    async fn find_by_id(&self, id: i64, user_id: i64) -> Result<Option<Annotation>> {
+        sqlx::query(
+            "select a.id, a.item_id, a.user_id, a.author, a.anchor, a.text, a.created_at
+             from annotations a
+             join items i on i.id = a.item_id
+             join workspaces w on w.id = i.workspace_id and w.user_id = $2
+             where a.id = $1",
+        )
+        .bind(id)
+        .bind(user_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?
+        .map(|row| annotation_from_row(&row))
+        .transpose()
+    }
+
     async fn list_by_item(&self, item_id: i64, user_id: i64) -> Result<Vec<Annotation>> {
         // join items → workspaces 限定归属：笔记属于 user，跨用户读的第二道防线。
         let rows = sqlx::query(
@@ -368,6 +385,18 @@ impl AnnotationRepository for PgAnnotationRepository {
         .await
         .map_err(map_sqlx_error)?;
         rows.iter().map(annotation_from_row).collect()
+    }
+
+    // 写路径守卫：user_id 限定归属（第二道防线）。
+    async fn update(&self, ann: &Annotation, user_id: i64) -> Result<bool> {
+        let result = sqlx::query("update annotations set text = $3 where id = $1 and user_id = $2")
+            .bind(ann.id)
+            .bind(user_id)
+            .bind(&ann.text)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?;
+        Ok(result.rows_affected() > 0)
     }
 
     async fn delete(&self, id: i64, user_id: i64) -> Result<bool> {

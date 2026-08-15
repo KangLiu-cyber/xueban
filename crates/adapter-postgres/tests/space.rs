@@ -327,6 +327,40 @@ async fn annotation_lifecycle_and_ownership_delete() {
             .is_empty()
     );
 
+    // find_by_id：本人命中、他人 None。
+    let found = repo
+        .find_by_id(id1, user_id)
+        .await
+        .expect("查询失败")
+        .expect("应按归属找到");
+    assert_eq!(found.id, id1);
+    assert!(
+        repo.find_by_id(id1, other)
+            .await
+            .expect("查询失败")
+            .is_none()
+    );
+
+    // update：本人改文本生效，他人改不动（user_id 归属守卫）。
+    let mut mine = found;
+    mine.text = "新文本".into();
+    assert!(repo.update(&mine, user_id).await.expect("更新失败"));
+    let after = repo
+        .find_by_id(id1, user_id)
+        .await
+        .expect("查询失败")
+        .expect("应找到");
+    assert_eq!(after.text, "新文本");
+    assert!(!repo.update(&mine, other).await.expect("他人更新"));
+    assert_eq!(
+        repo.find_by_id(id1, user_id)
+            .await
+            .expect("查询失败")
+            .expect("应找到")
+            .text,
+        "新文本"
+    );
+
     // 他人不能删（user_id 归属校验）。
     assert!(!repo.delete(id1, other).await.expect("删除失败"));
     // 本人可删；重复删返回 false。
