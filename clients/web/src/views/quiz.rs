@@ -27,19 +27,26 @@ async fn load_scope(state: AppState, scope: QuizScope) {
     let Some(ws) = state.workspace.get_untracked() else {
         return;
     };
+    // P2-9：抽题失败不再静默吞掉——toast 后按空池处理。
     let qs = match scope {
         QuizScope::All => {
             let pool = state.pool.get_untracked();
             if !pool.is_empty() {
                 pool
             } else {
-                api::draw(&DrawQuery {
+                match api::draw(&DrawQuery {
                     workspace_id: ws.id,
                     scope: None,
                     count: Some(100),
                 })
                 .await
-                .unwrap_or_default()
+                {
+                    Ok(qs) => qs,
+                    Err(e) => {
+                        state.toast(&format!("题库加载失败：{}", e));
+                        Vec::new()
+                    }
+                }
             }
         }
         QuizScope::Episode(c, e) => {
@@ -50,22 +57,29 @@ async fn load_scope(state: AppState, scope: QuizScope) {
                 .and_then(|co| co.episodes.get(e))
                 .map(|ep| ep.node_id);
             match node_id {
-                Some(id) => api::draw(&DrawQuery {
+                Some(id) => match api::draw(&DrawQuery {
                     workspace_id: ws.id,
                     scope: Some(id),
                     count: Some(100),
                 })
                 .await
-                .unwrap_or_default(),
+                {
+                    Ok(qs) => qs,
+                    Err(e) => {
+                        state.toast(&format!("题库加载失败：{}", e));
+                        Vec::new()
+                    }
+                },
                 None => Vec::new(),
             }
         }
-        QuizScope::WrongOnly => api::wrong_list()
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .map(|w| w.question)
-            .collect(),
+        QuizScope::WrongOnly => match api::wrong_list().await {
+            Ok(list) => list.into_iter().map(|w| w.question).collect(),
+            Err(e) => {
+                state.toast(&format!("错题本加载失败：{}", e));
+                Vec::new()
+            }
+        },
     };
     let n = qs.len();
     state.quiz_pool.set(qs);
@@ -203,13 +217,19 @@ pub fn QuizView(state: AppState) -> impl IntoView {
                     if m.contains_key(&(c, e)) {
                         continue;
                     }
-                    let qs = api::draw(&DrawQuery {
+                    let qs = match api::draw(&DrawQuery {
                         workspace_id: ws.id,
                         scope: Some(ep.node_id),
                         count: Some(100),
                     })
                     .await
-                    .unwrap_or_default();
+                    {
+                        Ok(qs) => qs,
+                        Err(e) => {
+                            st.toast(&format!("题数加载失败：{}", e));
+                            Vec::new()
+                        }
+                    };
                     m.insert((c, e), qs.len() as u32);
                     counts.set(m.clone());
                 }

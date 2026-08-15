@@ -210,23 +210,26 @@ async fn load_episode(state: AppState, quiz_count: RwSignal<u32>, c: usize, e: u
     let Some(ep) = course.episodes.get(e).cloned() else {
         return;
     };
+    // P2-9：笔记 / 习题拉取失败均 toast，不再静默缺显。
     let mut bundles = Vec::new();
     for note in &ep.notes {
-        if let Ok(b) = api::item_bundle(note.id).await {
-            bundles.push(b);
+        match api::item_bundle(note.id).await {
+            Ok(b) => bundles.push(b),
+            Err(e) => state.toast(&format!("笔记「{}」加载失败：{}", note.name, e)),
         }
     }
     state.note_bundles.set(bundles);
     state.mark_learned(ep.node_id);
     if let Some(ws) = state.workspace.get_untracked() {
-        if let Ok(qs) = api::draw(&DrawQuery {
+        match api::draw(&DrawQuery {
             workspace_id: ws.id,
             scope: Some(ep.node_id),
             count: Some(100),
         })
         .await
         {
-            quiz_count.set(qs.len() as u32);
+            Ok(qs) => quiz_count.set(qs.len() as u32),
+            Err(e) => state.toast(&format!("习题加载失败：{}", e)),
         }
     }
     let st = state;

@@ -18,14 +18,19 @@ thread_local! {
 }
 
 /// 拉取错题列表与统计，更新徽标（刷题 / 模考 / 重做后调用）。
+/// P2-9：任一接口失败均 toast，不再静默显示空。
 pub async fn refresh_wrong(state: AppState) {
-    if let Ok(list) = api::wrong_list().await {
-        let n = list.len() as u32;
-        state.wrong_badge.set(n);
-        state.wrong_list.set(list);
+    match api::wrong_list().await {
+        Ok(list) => {
+            let n = list.len() as u32;
+            state.wrong_badge.set(n);
+            state.wrong_list.set(list);
+        }
+        Err(e) => state.toast(&format!("错题本加载失败：{}", e)),
     }
-    if let Ok(stats) = api::wrong_stats().await {
-        state.wrong_stats.set(Some(stats));
+    match api::wrong_stats().await {
+        Ok(stats) => state.wrong_stats.set(Some(stats)),
+        Err(e) => state.toast(&format!("错题统计加载失败：{}", e)),
     }
 }
 

@@ -47,10 +47,17 @@ fn close_all_modals(state: AppState) {
 pub(crate) async fn init_data(state: AppState) {
     // P2-10：每次初始化都刷新工作空间列表（弹窗切换列表 / 侧栏回退依赖它）；
     // 列表为空且当前无空间时，仍需继续走下面的空间回退逻辑。
-    let list = api::list_workspaces().await.ok();
-    if let Some(list) = &list {
-        state.workspaces.set(list.clone());
-    }
+    // P2-9：空间列表加载失败不再静默，提示后按无列表回退。
+    let list = match api::list_workspaces().await {
+        Ok(list) => {
+            state.workspaces.set(list.clone());
+            Some(list)
+        }
+        Err(e) => {
+            state.toast(&format!("获取备考空间失败：{}", e));
+            None
+        }
+    };
     let ws = match state.workspace.get_untracked() {
         Some(w) => Some(w),
         None => match list {
@@ -66,7 +73,14 @@ pub(crate) async fn init_data(state: AppState) {
         state.setup_open.set(true);
         return;
     };
-    let tree = api::tree(w.id).await.unwrap_or_default();
+    // P2-9：目录加载失败提示后显示空目录，而非无感静默。
+    let tree = match api::tree(w.id).await {
+        Ok(t) => t,
+        Err(e) => {
+            state.toast(&format!("目录加载失败：{}", e));
+            Vec::new()
+        }
+    };
     state.tree.set(tree.clone());
     state.courses.set(state::derive_courses(&tree));
     match api::draw(&DrawQuery {
