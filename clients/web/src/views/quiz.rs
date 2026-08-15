@@ -221,15 +221,17 @@ pub fn QuizView(state: AppState) -> impl IntoView {
         QuizScope::WrongOnly => "只练错题".to_string(),
     };
     let scope_hint = move || format!("共 {} 题符合条件", state.quiz_pool.get().len());
+    // P2-6：行内读数全部走 get()（订阅），题数与当前范围高亮随
+    // quiz_scope / pool / counts / wrong_list 变化即时刷新。
     let scope_rows = move || {
-        let cur = state.quiz_scope.get_untracked();
+        let cur = state.quiz_scope.get();
         let f = scope_search.get().trim().to_lowercase();
-        let courses = state.courses.get_untracked();
+        let courses = state.courses.get();
         let mut rows: Vec<AnyView> = Vec::new();
         let matches = |name: &str| f.is_empty() || name.to_lowercase().contains(&f);
 
         if matches("跨集综合练") {
-            let n = state.pool.get_untracked().len() as u32;
+            let n = state.pool.get().len() as u32;
             let st = state;
             rows.push(
                 (view! {
@@ -248,7 +250,7 @@ pub fn QuizView(state: AppState) -> impl IntoView {
                 if !matches(&name) {
                     continue;
                 }
-                let n = counts.get_untracked().get(&(c, e)).copied().unwrap_or(0);
+                let n = counts.get().get(&(c, e)).copied().unwrap_or(0);
                 let is_cur = cur == QuizScope::Episode(c, e);
                 let st = state;
                 rows.push((view! {
@@ -261,7 +263,7 @@ pub fn QuizView(state: AppState) -> impl IntoView {
             }
         }
         if matches("只练错题") {
-            let n = state.wrong_list.get_untracked().len() as u32;
+            let n = state.wrong_list.get().len() as u32;
             let st = state;
             rows.push((view! {
                 <div class="dd-item" class:active=cur == QuizScope::WrongOnly

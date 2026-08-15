@@ -71,7 +71,23 @@ fn check_selection(state: AppState) {
         hide();
         return;
     };
-    if body_a.id() != body_f.id() {
+    // P2-5：note-body 无 id 属性，改判 anchor/focus 所在笔记卡片为同一元素，
+    // 避免跨卡选区（两卡 id 皆空时旧比较恒为真）漏检。
+    let Ok(Some(card_a)) = body_a.closest(".note-card") else {
+        hide();
+        return;
+    };
+    let Ok(Some(card_f)) = body_f.closest(".note-card") else {
+        hide();
+        return;
+    };
+    let same_card = card_a
+        .clone()
+        .dyn_into::<web_sys::Node>()
+        .ok()
+        .zip(card_f.clone().dyn_into::<web_sys::Node>().ok())
+        .is_some_and(|(a, f)| a.is_same_node(Some(&f)));
+    if !same_card {
         hide();
         return;
     }
@@ -84,11 +100,7 @@ fn check_selection(state: AppState) {
         hide();
         return;
     }
-    let Ok(Some(card)) = body_a.closest(".note-card") else {
-        hide();
-        return;
-    };
-    let Some(item_id) = card
+    let Some(item_id) = card_a
         .get_attribute("data-item-id")
         .and_then(|s| s.parse::<i64>().ok())
     else {
