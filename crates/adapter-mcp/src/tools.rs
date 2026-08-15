@@ -22,7 +22,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo};
 use rmcp::{Json, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::McpState;
 use crate::auth::AuthUser;
@@ -178,13 +178,13 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<ListItemsInput>,
-    ) -> Result<Json<Vec<ItemNode>>, ErrorData> {
+    ) -> Result<Json<ItemTreeOutput>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .space
             .tree(user.id, input.workspace_id)
             .await
-            .map(Json)
+            .map(|items| Json(ItemTreeOutput { items }))
             .map_err(map_err)
     }
 
@@ -224,7 +224,7 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<SaveQuestionsInput>,
-    ) -> Result<Json<Vec<i64>>, ErrorData> {
+    ) -> Result<Json<SavedQuestionsOutput>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .agent
@@ -235,7 +235,7 @@ impl McpService {
                 input.questions,
             )
             .await
-            .map(Json)
+            .map(|ids| Json(SavedQuestionsOutput { ids }))
             .map_err(map_err)
     }
 
@@ -249,14 +249,14 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<GetEventsInput>,
-    ) -> Result<Json<Vec<Event>>, ErrorData> {
+    ) -> Result<Json<EventsOutput>, ErrorData> {
         let user = self.user(&parts)?;
         let limit = input.limit.unwrap_or(20);
         self.state
             .agent
             .read_events(user.id, limit)
             .await
-            .map(Json)
+            .map(|events| Json(EventsOutput { events }))
             .map_err(map_err)
     }
 
@@ -364,4 +364,22 @@ pub struct SaveQuestionsInput {
 pub struct GetEventsInput {
     /// 返回条数（默认 20）。
     pub limit: Option<u32>,
+}
+
+/// list_items 出参（rmcp 要求工具输出 schema 根类型为 object，数组须包装）。
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ItemTreeOutput {
+    pub items: Vec<ItemNode>,
+}
+
+/// save_questions 出参：新写入的题目 id 列表。
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct SavedQuestionsOutput {
+    pub ids: Vec<i64>,
+}
+
+/// get_events 出参。
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct EventsOutput {
+    pub events: Vec<Event>,
 }
