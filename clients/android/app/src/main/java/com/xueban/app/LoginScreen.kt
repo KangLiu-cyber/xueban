@@ -148,8 +148,13 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                                 loginPassword.isBlank() -> state.toast("请输入密码")
                                 else -> {
                                     if (state.login(loginAccount, loginPassword)) {
-                                        step = 2
-                                        goal = ""
+                                        // 老用户直接进入已绑定的备考空间；仅首次登录走「创建备考空间」。
+                                        if (state.enterExistingWorkspace()) {
+                                            onEntered()
+                                        } else {
+                                            step = 2
+                                            goal = ""
+                                        }
                                     }
                                 }
                             }

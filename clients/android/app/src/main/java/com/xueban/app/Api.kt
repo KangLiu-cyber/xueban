@@ -3,6 +3,8 @@ package com.xueban.app
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -52,14 +54,19 @@ object Api {
             "DELETE" -> b.delete().build()
             else -> b.get().build()
         }
-        client.newCall(req).execute().use { resp ->
-            val text = resp.body?.string() ?: ""
-            if (resp.code in 200..299) return text
-            if (resp.code == 401) authToken = null
-            val msg = runCatching {
-                json.decodeFromString<JsonObject>(text)["error"]?.toString()?.trim('"')
-            }.getOrNull() ?: text
-            throw ApiException(resp.code, msg)
+        // OkHttp 禁止在主线程发起请求（抛 message 为 null 的 NetworkOnMainThreadException，
+        // 会命中 guard 的「无法连接服务器」兜底文案）。AppState 以同步方式调用 Api，
+        // 这里把 I/O 挪到 IO 线程，外部签名保持不变。
+        return runBlocking(Dispatchers.IO) {
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string() ?: ""
+                if (resp.code in 200..299) return@runBlocking text
+                if (resp.code == 401) authToken = null
+                val msg = runCatching {
+                    json.decodeFromString<JsonObject>(text)["error"]?.toString()?.trim('"')
+                }.getOrNull() ?: text
+                throw ApiException(resp.code, msg)
+            }
         }
     }
 
@@ -314,7 +321,9 @@ data class PaperConfig(
     val scope: String? = null,
     @SerialName("question_types") val questionTypes: List<QuestionType>? = null,
     @SerialName("source_item_ids") val sourceItemIds: List<Long>? = null,
-    val count: Int = 75,
+    // 无默认值：后端 count 为必填字段，kotlinx 序列化会跳过「等于默认值」的字段
+    // （encodeDefaults=false），有默认值时 count 不落进请求体导致 400。
+    val count: Int,
 )
 
 @Serializable

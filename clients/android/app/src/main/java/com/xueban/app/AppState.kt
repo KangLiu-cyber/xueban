@@ -198,6 +198,14 @@ class AppState(context: Context) {
 
     // ==================== 学习空间 ====================
 
+    /** 老用户登录：直接加载已绑定的备考空间并进入主界面（不重填目标、不弹 Agent 引导）。 */
+    fun enterExistingWorkspace(): Boolean {
+        val ws = guard("加载空间失败") { Api.listWorkspaces().firstOrNull() } ?: return false
+        enterWorkspace(ws, fresh = false)
+        return true
+    }
+
+    /** 首次登录：创建备考空间后进入主界面，并弹 Agent 接入引导。 */
     fun ensureWorkspace(name: String, goal: String, date: String?) {
         val ws = guard("创建空间失败") {
             val list = Api.listWorkspaces()
@@ -206,12 +214,14 @@ class AppState(context: Context) {
                     WorkspaceInput(name = name, examGoal = goal, examDate = date)
                 )
             } else {
-                Api.updateWorkspace(
-                    list.first().id,
-                    WorkspaceInput(name = list.first().name, examGoal = goal, examDate = date)
-                )
+                // 已绑定空间的账号不应再进入本流程（防御：直接采用已有空间，不覆盖原目标）。
+                list.first()
             }
         } ?: return
+        enterWorkspace(ws, fresh = true)
+    }
+
+    private fun enterWorkspace(ws: Workspace, fresh: Boolean) {
         workspace = ws
         examGoal = ws.examGoal
         examDate = ws.examDate ?: ""
@@ -220,7 +230,7 @@ class AppState(context: Context) {
         loadTree()
         restoreMock()
         loggedIn = true
-        freshEnter = true
+        freshEnter = fresh
     }
 
     fun loadTree() {
