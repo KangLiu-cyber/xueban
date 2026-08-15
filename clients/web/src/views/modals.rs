@@ -159,7 +159,13 @@ pub fn Modals(state: AppState) -> impl IntoView {
         }
         let st = state;
         spawn_local(async move {
-            match api::credential().await {
+            // P1-6：首次获取 404（尚无 agent token）时自动 rotate 签发
+            let cred = match api::credential().await {
+                Ok(c) => Ok(c),
+                Err(api::ApiError::Http(404, _)) => api::rotate_credential().await,
+                Err(e) => Err(e),
+            };
+            match cred {
                 Ok(c) => {
                     let name = st
                         .user

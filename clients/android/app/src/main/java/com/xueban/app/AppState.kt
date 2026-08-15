@@ -473,7 +473,14 @@ class AppState(context: Context) {
     // ==================== Agent 凭证 ====================
 
     fun loadCredential() {
-        val resp = guard("获取凭证失败") { Api.credential() } ?: return
+        // P1-6：首次获取 404（尚无 agent token）时自动 rotate 签发
+        val resp = guard("获取凭证失败") {
+            try {
+                Api.credential()
+            } catch (e: Api.ApiException) {
+                if (e.code == 404) Api.rotateCredential() else throw e
+            }
+        } ?: return
         credential = resp
         agentConfigText = buildAgentConfig(resp)
     }
