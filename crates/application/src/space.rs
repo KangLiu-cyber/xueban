@@ -242,6 +242,8 @@ where
     }
 
     /// Annotate：在笔记上追加批注，落 annotate 事件。
+    /// Agent 批注（author = Ai）同时追加 agent_write 事件（§8.2 强制规则：
+    /// Agent 写入全部记入 events，客户端可展示"由 AI 生成"来源标注）。
     pub async fn annotate(
         &self,
         user_id: i64,
@@ -282,6 +284,10 @@ where
                 created_at: Utc::now(),
             })
             .await?;
+        if author == AnnotationAuthor::Ai {
+            self.log_agent_write(user_id, item.workspace_id, Some(item_id))
+                .await?;
+        }
         Ok(ann)
     }
 
@@ -674,11 +680,32 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(s.list_annotations(1, note.id).await.unwrap().len(), 1);
-        s.delete_annotation(1, ann.id).await.unwrap();
-        assert!(s.list_annotations(1, note.id).await.unwrap().is_empty());
-        // 事件已记录。
+        // 用户批注只落 annotate 事件。
         let events = s.events.list_by_user(1, 10).await.unwrap();
+        assert_eq!(events.len(), 1);
         assert_eq!(events[0].action, EventAction::Annotate);
+
+        // Agent 批注同时追加 agent_write 事件（§8.2 来源标注）；列表时间升序。
+        s.annotate(
+            1,
+            note.id,
+            "正文".into(),
+            "AI 考点".into(),
+            AnnotationAuthor::Ai,
+        )
+        .await
+        .unwrap();
+        let events = s.events.list_by_user(1, 10).await.unwrap();
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].action, EventAction::Annotate);
+        assert_eq!(events[1].action, EventAction::Annotate);
+        assert_eq!(events[2].action, EventAction::AgentWrite);
+        assert_eq!(events[2].item_id, Some(note.id));
+
+        s.delete_annotation(1, ann.id).await.unwrap();
+        let rest = s.list_annotations(1, note.id).await.unwrap();
+        assert_eq!(rest.len(), 1);
+        assert_eq!(rest[0].author, AnnotationAuthor::Ai);
     }
 
     #[tokio::test]
