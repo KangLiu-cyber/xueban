@@ -200,18 +200,11 @@ pub struct Paper {
     pub id: i64,
     pub user_id: i64,
     pub workspace_id: i64,
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub config: PaperConfig,
-    pub status: PaperStatus,
     pub result: Option<PaperResult>,
     pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum PaperStatus {
-    Draft,
-    Submitted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
