@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,17 +85,21 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                     Text("学", color = Xb.bg, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
                 Column {
-                    Text("学伴 · 超级学习助手 · Android", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Xb.ink)
-                    Text("看课、刷题、备考 一个空间就够了", fontSize = 11.5.sp, color = Xb.muted)
+                    Text("学伴", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Xb.ink)
+                    Text("超级学习助手 · Android", fontSize = 11.5.sp, color = Xb.muted)
                 }
             }
             Spacer(Modifier.height(24.dp))
 
             if (step == 1) {
-                Text("看课、刷题、备考\n一个空间就够了", fontSize = 26.sp, fontWeight = FontWeight.Bold, lineHeight = 38.sp, color = Xb.ink)
+                Text(
+                    "看课、刷题、备考\n一个空间就够了",
+                    fontSize = 26.sp, fontWeight = FontWeight.Bold, lineHeight = 38.sp,
+                    color = Xb.ink, fontFamily = FontFamily.Serif,
+                )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "AI 为你生成笔记与习题，随选随批注，错题自动归集，任意 Agent 都可接入。",
+                    "把课程交给 AI：自动生成笔记与习题；把练习交给系统：刷题、错题、组卷、复盘一气呵成。",
                     fontSize = 13.sp, color = Xb.muted, lineHeight = 23.sp,
                 )
                 Spacer(Modifier.height(16.dp))
@@ -175,7 +180,7 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                         })
                     }
                     Text(
-                        "注册即代表同意《用户协议》与《隐私政策》",
+                        "账号体系是订阅计费与学习数据存储的基础\n登录即代表同意《用户协议》与《隐私政策》（演示文案）",
                         Modifier.fillMaxWidth().padding(top = 14.dp),
                         color = Xb.mutedLight, fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         lineHeight = 19.sp,
@@ -190,8 +195,13 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                 }
                 Spacer(Modifier.height(18.dp))
                 Text("🎯 写下你的考试目标", fontSize = 15.5.sp, fontWeight = FontWeight.Bold, color = Xb.ink)
+                Text(
+                    "自由填写，写清楚就行，不设下拉选项",
+                    Modifier.padding(top = 5.dp),
+                    color = Xb.mutedLight, fontSize = 12.sp,
+                )
                 Spacer(Modifier.height(14.dp))
-                FormRow("考试目标（如：软考 · 系统架构设计师）") {
+                FormRow("考试目标（手写填写）") {
                     FormInput(goal, { goal = it }, placeholder = "如：软考 · 系统架构设计师")
                 }
                 FormRow("考试日期") {

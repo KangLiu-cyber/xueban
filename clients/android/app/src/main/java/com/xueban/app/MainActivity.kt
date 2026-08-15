@@ -6,25 +6,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.movableContentOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,42 +67,18 @@ fun XueBanApp() {
         if (!state.loggedIn) {
             LoginScreen(state, onEntered = {})
         } else {
-            // §12.5：movableContentOf 让页面的 remember 状态在折叠 / 展开分支间迁移而不重建。
-            val tabContent = remember {
-                movableContentOf { TabContent(state) }
-            }
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                if (maxWidth < 600.dp) {
-                    Column(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f).fillMaxWidth()) {
-                            tabContent()
-                        }
-                        NavigationBar(containerColor = Xb.surface) {
-                            tabs.forEachIndexed { i, tab ->
-                                NavigationBarItem(
-                                    selected = state.tab == i,
-                                    onClick = { state.tab = i },
-                                    icon = { Text(tab.emoji, fontSize = 17.sp) },
-                                    label = { Text(tab.label, fontSize = 10.5.sp, fontWeight = FontWeight.Medium) },
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    Row(Modifier.fillMaxSize()) {
-                        NavigationRail(containerColor = Xb.surface) {
-                            tabs.forEachIndexed { i, tab ->
-                                NavigationRailItem(
-                                    selected = state.tab == i,
-                                    onClick = { state.tab = i },
-                                    icon = { Text(tab.emoji, fontSize = 18.sp) },
-                                    label = { Text(tab.label, fontSize = 11.sp, fontWeight = FontWeight.Medium) },
-                                )
-                            }
-                        }
-                        Box(Modifier.weight(1f).fillMaxSize()) {
-                            tabContent()
-                        }
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    TabContent(state)
+                }
+                NavigationBar(containerColor = Xb.surface) {
+                    tabs.forEachIndexed { i, tab ->
+                        NavigationBarItem(
+                            selected = state.tab == i,
+                            onClick = { state.tab = i },
+                            icon = { Text(tab.emoji, fontSize = 17.sp) },
+                            label = { Text(tab.label, fontSize = 10.5.sp, fontWeight = FontWeight.Medium) },
+                        )
                     }
                 }
             }

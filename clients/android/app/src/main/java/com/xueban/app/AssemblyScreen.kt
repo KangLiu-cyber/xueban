@@ -120,7 +120,7 @@ private fun AsmSourceCard(state: AppState) {
 private fun AsmTypeCard(state: AppState) {
     AsmCard {
         AsmSection("题型") {
-            ChipRow(listOf("全部题型", "单选题", "多选题", "判断题"), state.asmType) {
+            ChipRow(listOf("单选题", "多选题", "判断题"), state.asmType) {
                 state.asmType = it
             }
         }

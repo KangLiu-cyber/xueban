@@ -491,6 +491,7 @@ private fun DirPane(
                     onToggle = { onToggleCourse(if (openCourseId == course.dirId) null else course.dirId) },
                     selNodeId = openEpNodeId,
                     onOpenEp = onOpenEp,
+                    seenEpIds = state.seenEpIds,
                 )
             }
             SpacerPad(96.dp)
@@ -540,6 +541,7 @@ private fun CourseCard(
     onToggle: () -> Unit,
     selNodeId: Long?,
     onOpenEp: (EpUi) -> Unit,
+    seenEpIds: Set<Long>,
 ) {
     Column(
         Modifier
@@ -566,6 +568,7 @@ private fun CourseCard(
                 Text(course.name, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = Xb.ink, maxLines = 1)
                 Text("${course.episodes.size} 集 · AI 生成", fontSize = 11.sp, color = Xb.mutedLight)
             }
+            Badge("AI")
             Text("▶", fontSize = 12.sp, color = Xb.mutedLight, modifier = Modifier.rotate(if (open) 90f else 0f))
         }
         if (open) {
@@ -583,7 +586,8 @@ private fun CourseCard(
                     ) {
                         Text("第${ep.no}集", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Xb.mutedLight, modifier = Modifier.width(30.dp))
                         Text(ep.title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Xb.ink, modifier = Modifier.weight(1f), maxLines = 1)
-                        Badge("AI 生成")
+                        val seen = ep.nodeId in seenEpIds || ep.noteIds.any { it in seenEpIds }
+                        if (seen) Badge("已学", Xb.greenLight, Xb.green) else Badge("未学", Xb.surface2, Xb.mutedLight)
                     }
                 }
             }
@@ -672,7 +676,7 @@ private fun NotePane(state: AppState, modifier: Modifier = Modifier, showBack: B
                     }
                     Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         Badge("AI 生成笔记")
-                        Badge("B站课程 → AI 转写整理", bg = Xb.surface2, fg = Xb.muted)
+                        Badge("B站课程 → AI 转写整理", bg = Xb.accentLight, fg = Xb.accentDeep)
                     }
                     NoteBody(
                         content = bundle.item.content ?: "",

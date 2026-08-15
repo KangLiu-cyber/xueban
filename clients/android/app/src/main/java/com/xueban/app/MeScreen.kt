@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
@@ -68,7 +69,7 @@ fun MeScreen(state: AppState, onOpenGoal: () -> Unit) {
                     .fillMaxWidth()
                     .padding(top = 12.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Xb.surface)
+                    .background(Brush.linearGradient(listOf(Color.White, Color(0xFFF6F3FB))))
                     .border(1.dp, Xb.borderLight, RoundedCornerShape(14.dp))
                     .clickable(onClick = onOpenGoal)
                     .padding(16.dp),

@@ -49,6 +49,8 @@ class AppState(context: Context) {
     var annoQuote by mutableStateOf("")
     var annoText by mutableStateOf("")
     var annoDetail by mutableStateOf<Annotation?>(null)
+    /** 已学记录：后端未下发 seen 字段，本地持久化已打开的笔记 id（原型「已学 / 未学」徽标）。 */
+    var seenEpIds by mutableStateOf<Set<Long>>(emptySet())
 
     // ---- 刷题 ----
     var quizScope by mutableStateOf("全部范围")
@@ -70,7 +72,7 @@ class AppState(context: Context) {
 
     // ---- 组卷 ----
     var asmSource by mutableStateOf("全部")
-    var asmType by mutableStateOf("全部题型")
+    var asmType by mutableStateOf("单选题")
     var asmScope by mutableStateOf("全部集数")
     var asmScopeId by mutableStateOf<Long?>(null)
     var asmCount by mutableStateOf(75)
@@ -150,6 +152,7 @@ class AppState(context: Context) {
         wrongList = emptyList()
         quizPool = emptyList()
         mockPaper = null
+        seenEpIds = emptySet()
         tab = 0
     }
 
@@ -212,6 +215,8 @@ class AppState(context: Context) {
         workspace = ws
         examGoal = ws.examGoal
         examDate = ws.examDate ?: ""
+        seenEpIds = prefs.getStringSet("seen_eps:${user?.id ?: ws.id}", emptySet())
+            ?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
         loadTree()
         restoreMock()
         loggedIn = true
@@ -224,6 +229,11 @@ class AppState(context: Context) {
         if (fresh != null) {
             tree = fresh
             cacheScope.launch { CacheStore.put("tree:${ws.id}", fresh) }
+            // 原型默认选中第一集作为刷题范围（而非「全部范围」）
+            if (quizScopeId == null) {
+                val firstEp = deriveCourses(fresh).firstOrNull()?.episodes?.firstOrNull()
+                if (firstEp != null) loadQuiz(firstEp.nodeId, epScopeName(firstEp))
+            }
         } else {
             cacheFallback<List<ItemNode>>(
                 "tree:${ws.id}",
@@ -265,6 +275,12 @@ class AppState(context: Context) {
         selectedEpId = itemId
         noteOpen = true
         annoMode = false
+        if (itemId !in seenEpIds) {
+            seenEpIds = seenEpIds + itemId
+            prefs.edit()
+                .putStringSet("seen_eps:${user?.id ?: workspace?.id}", seenEpIds.map { it.toString() }.toSet())
+                .apply()
+        }
     }
 
     fun closeNote() {

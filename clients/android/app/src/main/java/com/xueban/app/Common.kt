@@ -74,7 +74,7 @@ fun Badge(
     )
 }
 
-fun badgeAi() = Triple(Xb.goldLight, Xb.gold, "AI 生成")
+fun badgeAi() = Triple(Xb.goldLight, Xb.gold, "AI 生成题")
 fun badgeAi2() = Triple(Xb.accentLight, Xb.accentDeep, "AI 生成")
 fun badgeGreen() = Triple(Xb.greenLight, Xb.green, "已掌握")
 fun badgeRed() = Triple(Xb.redLight, Xb.red, "错题重做")
