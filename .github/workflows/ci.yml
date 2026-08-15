@@ -1,17 +1,17 @@
 # CI（docs/architecture.md §11）：
+#   触发：仅打固定版本 tag（v*，如 v0.1.0）触发整条流水线并发 Release；pull_request 只跑 gate 门禁；日常推分支不触发
 #   gate        — 提交门禁（fmt + clippy + test + check），与本地 `make gate` 一致
 #   build-musl  — cross 编译 musl 静态二进制 + trunk 编译 web 产物 → 服务端部署包
 #   android     — 安卓 APK（独立安装包）
 #   desktop     — 桌面端安装包（Tauri，独立安装包）
-#   release     — 打固定版本 tag（v*，如 v0.1.0）触发，CI 走完发布 GitHub Release（上传三个不同的包）
+#   release     — 固定版本 tag（v*）触发的发布 job，CI 走完创建 GitHub Release（上传三个不同的包）
 # 脚本统一放 scripts/（build-musl.sh / package-server.sh），本地 `make build-musl` 可复现。
 
 name: CI
 
 on:
   push:
-    branches: [master, main]
-    # 固定版本 tag（v*）也触发：release job 以 tag 为门槛，推 v0.1.0 即发布
+    # 不打 tag 不触发 CI：只有推 v* 版本 tag（如 v0.1.0）才跑整条流水线
     tags: ['v*']
   pull_request:
 
