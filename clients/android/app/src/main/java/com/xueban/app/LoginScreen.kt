@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -141,7 +142,7 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                         FormRow("密码") {
                             FormInput(loginPassword, { loginPassword = it }, placeholder = "请输入密码", password = true)
                         }
-                        XbButton("登 录", onClick = {
+                        XbButton("登 录", modifier = Modifier.fillMaxWidth(), onClick = {
                             when {
                                 loginAccount.isBlank() -> state.toast("请输入账号")
                                 loginPassword.isBlank() -> state.toast("请输入密码")
@@ -163,7 +164,7 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                         FormRow("确认密码") {
                             FormInput(regPassword2, { regPassword2 = it }, placeholder = "请再次输入密码", password = true)
                         }
-                        XbButton("注 册", onClick = {
+                        XbButton("注 册", modifier = Modifier.fillMaxWidth(), onClick = {
                             when {
                                 regAccount.isBlank() -> state.toast("请输入账号")
                                 regPassword.length < 8 -> state.toast("密码至少 8 位")
@@ -207,7 +208,7 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                 FormRow("考试日期") {
                     FormInput(date, { date = it }, placeholder = "2026-11-07")
                 }
-                XbButton("确认并进入系统", onClick = {
+                XbButton("确认并进入系统", modifier = Modifier.fillMaxWidth(), onClick = {
                     if (goal.isBlank()) {
                         state.toast("请手写填写你的考试目标")
                         return@XbButton
@@ -248,6 +249,11 @@ private fun RowScope.AuthTab(text: String, active: Boolean, onClick: () -> Unit)
         Modifier
             .weight(1f)
             .clip(RoundedCornerShape(8.dp))
+            .then(
+                // 原型 .auth-tab.active 带 box-shadow：激活页签浮起。
+                if (active) Modifier.shadow(2.dp, RoundedCornerShape(8.dp), Xb.shadow, Xb.shadow)
+                else Modifier
+            )
             .background(if (active) Xb.surface else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(vertical = 9.dp),
