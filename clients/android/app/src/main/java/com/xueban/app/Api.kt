@@ -193,7 +193,8 @@ data class Workspace(
     @SerialName("exam_goal") val examGoal: String,
     @SerialName("exam_date") val examDate: String? = null,
     @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String,
+    // 后端 workspaces 表无 updated_at 列，必填会致反序列化失败。
+    @SerialName("updated_at") val updatedAt: String? = null,
 )
 
 @Serializable
@@ -317,9 +318,6 @@ data class AssembleRequest(
 )
 
 @Serializable
-enum class PaperStatus { @SerialName("draft") Draft, @SerialName("submitted") Submitted }
-
-@Serializable
 data class PaperResult(
     val score: Int = 0,
     val correct: Int = 0,
@@ -332,9 +330,9 @@ data class Paper(
     val id: Long,
     @SerialName("user_id") val userId: Long,
     @SerialName("workspace_id") val workspaceId: Long,
-    val name: String,
+    // 后端 name 为 Option，未命名组卷时返回 null。
+    val name: String? = null,
     val config: PaperConfig,
-    val status: PaperStatus,
     val result: PaperResult? = null,
     @SerialName("created_at") val createdAt: String,
 )

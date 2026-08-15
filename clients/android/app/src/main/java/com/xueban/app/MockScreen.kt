@@ -78,7 +78,7 @@ fun MockScreen(state: AppState, onFinish: () -> Unit) {
                 color = Xb.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
             )
             Text(
-                paper.paper.name,
+                paper.paper.name ?: "模考卷",
                 color = Xb.ink, fontSize = 14.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
