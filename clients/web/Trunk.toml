@@ -1,0 +1,10 @@
+# 前端 dev server（make web / tauri beforeDevCommand）
+# 监听 8081，与后端 8080 并存；/api/v1 代理到后端（同 Caddy 同域反代模式，
+# 前端 base_url 的"浏览器同源兜底"直接命中 trunk 的 /api/v1）。
+[serve]
+port = 8081
+address = "127.0.0.1"
+
+[[proxy]]
+backend = "http://127.0.0.1:8080/api/v1"
+rewrite = "/api/v1"
