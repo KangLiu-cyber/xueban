@@ -156,10 +156,14 @@ Agent 读取事件 → 复盘诊断 → 生成补充内容写回系统
 
 ## 九、MCP 接口
 
-create_workspace / create_item / write_item / read_item / list_items / get_events / report_status。
+bootstrap（能力下发）/ create_workspace / create_item / write_item / read_item /
+list_items（出参 `{items: [...]}`）/ add_annotation / save_questions（出参 `{ids: [...]}`）/
+get_events（出参 `{events: [...]}`）/ report_status。
 
 - Agent 持 token 接入时，服务端自动下发 Skill、提示词与 MCP 工具清单。
 - 所有接口按 token 识别用户，数据按用户隔离。
+- 工具出参根类型一律为 object（rmcp 要求）：数组统一包装在 `items` / `ids` / `events` 字段下。
+- 题目线格式（§8.1）：single 答案为数字索引（如 1），multi 为索引数组（如 [0,2]），judge 为布尔。
 
 ## 十、技术选型
 
