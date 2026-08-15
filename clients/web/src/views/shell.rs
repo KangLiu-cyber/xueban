@@ -14,8 +14,15 @@ use crate::views::ui::{close_all_dd, fire_view_switch_hooks};
 use crate::views::wrong::refresh_wrong;
 
 /// 切换主视图：触发视图钩子、清 topbar 覆盖、切视图、回顶。
+/// P1-5：离开模考视图停倒计时，回到模考续跑。
 pub fn switch_view(state: AppState, v: View) {
     fire_view_switch_hooks();
+    let cur = state.view.get_untracked();
+    if cur == View::Mock && v != View::Mock {
+        crate::views::mock::pause_timer();
+    } else if v == View::Mock && cur != View::Mock {
+        crate::views::mock::resume_timer(state);
+    }
     state.topbar_override.set(None);
     state.view.set(v);
     if let Some(el) = document().get_element_by_id("content-area") {

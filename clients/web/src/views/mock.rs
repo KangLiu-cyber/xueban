@@ -124,6 +124,45 @@ fn stop_timer() {
     MOCK_TIMER.with(|t| *t.borrow_mut() = None);
 }
 
+/// P1-5：离开模考视图停表（shell::switch_view 调用）。
+pub(crate) fn pause_timer() {
+    stop_timer();
+}
+
+/// P1-5：回到模考视图续跑倒计时。
+pub(crate) fn resume_timer(state: AppState) {
+    if state.mock.get_untracked().is_some() {
+        start_timer(state);
+    }
+}
+
+/// 退出模考：已作答时确认（退出丢失作答），确认后停表清会话回组卷。
+pub fn ask_exit_mock(state: AppState) {
+    let Some(s) = state.mock.get_untracked() else {
+        return;
+    };
+    let answered = s.answers.iter().filter(|a| a.is_some()).count();
+    if answered > 0 {
+        state.confirm.set(Some(ConfirmSpec {
+            title: "退出模考".to_string(),
+            text_html: format!(
+                "已作答 <b style=\"color:var(--red)\">{}</b> 题，退出后本次作答将丢失。<br>确定要退出吗？",
+                answered
+            ),
+            ok_label: "退出模考".to_string(),
+            on_ok: Arc::new(move || exit_mock(state)),
+        }));
+    } else {
+        exit_mock(state);
+    }
+}
+
+fn exit_mock(state: AppState) {
+    stop_timer();
+    state.mock.set(None);
+    crate::views::shell::switch_view(state, View::Assembly);
+}
+
 /// 交卷：收集作答提交后端，成功后弹结果、清会话并生成下一卷序号。
 pub fn submit_mock(state: AppState) {
     if SUBMITTING.with(|f| f.replace(true)) {
@@ -437,6 +476,9 @@ pub fn MockView(state: AppState) -> impl IntoView {
                     <div class="mock-meta">{meta}</div>
                 </div>
                 <div class="mock-timer">{timer}</div>
+                <button class="btn btn-ghost btn-sm" on:click=move |_| ask_exit_mock(state)>
+                    "← 退出"
+                </button>
                 <button class="btn btn-primary btn-sm" on:click=move |_| ask_submit_mock(state)>
                     "交卷"
                 </button>
