@@ -1,6 +1,8 @@
-# 单机部署编排（docs/architecture.md §11）：postgres + server + web 三个服务。
+# 单机部署编排（docs/architecture.md §11）：postgres + server 两个服务。
 # 镜像不做编译——先跑 scripts/build-musl.sh（二进制）与 trunk build --release（web 产物），
-# 再 build 本编排；skills/ 目录只读挂载进 server，宿主直接编辑 skills/ 即更新。
+# 再 build 本编排；skills/ 与前端 web 产物（clients/web/dist）只读挂载进 server，
+# 由服务端静态托管（bootstrap 的 WEB_DIST_DIR 兜底默认即相对路径 clients/web/dist），
+# 宿主直接替换挂载目录内容即更新，无需重建镜像。
 # 完整部署包由 scripts/package-server.sh 打 tar.gz，解压后即可直接 docker compose up --build。
 #
 # 用法：
@@ -34,6 +36,7 @@ services:
       MCP_ENDPOINT: ${MCP_ENDPOINT:-http://127.0.0.1:8080/mcp}
     volumes:
       - ../skills:/app/skills:ro
+      - ../clients/web/dist:/app/clients/web/dist:ro
     ports:
       - "8080:8080"
     depends_on:
@@ -45,19 +48,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
-
-  # 前端 web：nginx 静态服务 + 同域反代 /api 与 /mcp 到 server（deploy/nginx.conf）。
-  # 浏览器访问 http://<host>:8081 即可；MCP 端点对外为 http://<host>:8081/mcp。
-  web:
-    build:
-      context: ..
-      dockerfile: deploy/web.Dockerfile
-    restart: unless-stopped
-    ports:
-      - "8081:80"
-    depends_on:
-      server:
-        condition: service_healthy
 
 volumes:
   pgdata:

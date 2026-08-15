@@ -4,7 +4,9 @@
 //! - `DATABASE_URL`：PostgreSQL 连接串（必填）；
 //! - `BIND_ADDR`：监听地址，默认 `127.0.0.1:8080`；
 //! - `MCP_ENDPOINT`：MCP 网关对外地址（随 Agent 凭证下发），默认 `http://<BIND_ADDR>/mcp`；
-//! - `SKILLS_DIR`：内置 Skill 目录，默认 `skills`（相对工作目录，一个子文件夹一个 skill）。
+//! - `SKILLS_DIR`：内置 Skill 目录，默认 `skills`（相对工作目录，一个子文件夹一个 skill）；
+//! - `WEB_DIST_DIR`：前端 web 静态产物目录，默认 `clients/web/dist`（相对工作目录，
+//!   由服务端静态托管，SPA 回退 index.html；`/api` 与 `/mcp` 未匹配路径保持 404）。
 //!
 //! 六边形组装（P1-10）：仓储具体实现（adapter-postgres）在此实例化，
 //! 以 `Arc<dyn Trait + Send + Sync>` 注入用例服务（application），再注入
@@ -26,6 +28,8 @@ use application::quiz::QuizService;
 use application::space::SpaceService;
 use application::wrong::WrongService;
 use axum::Router;
+use axum::http::{Request, StatusCode};
+use axum::response::IntoResponse;
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
     PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
@@ -33,7 +37,10 @@ use domain::ports::{
 };
 use domain::skill::{Skill, parse_skill_file};
 use sqlx::postgres::PgPoolOptions;
-use tracing::info;
+use tower::ServiceExt;
+use tower_http::map_response_body::MapResponseBody;
+use tower_http::services::{ServeDir, ServeFile};
+use tracing::{info, warn};
 
 /// 加载系统内置 Skill 目录：`skills/` 下一个子文件夹一个 skill，
 /// 文件夹内取 `skill.md`（frontmatter name/description + 正文脚本，见 domain::skill）；
@@ -166,7 +173,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mcp_endpoint,
     );
     let mcp_state = adapter_mcp::McpState::new(auth, space, agent);
-    let app: Router = adapter_http::router(http_state).merge(adapter_mcp::router(mcp_state));
+
+    // 前端静态托管（部署资产，见 docs/architecture.md §11）：REST 与 MCP 路由优先，
+    // 其余路径由服务端直接 serve 前端产物（默认 `clients/web/dist`，相对工作目录），
+    // SPA 回退 index.html；/api 与 /mcp 的未匹配路径保持 404，不回退到页面。
+    let web_dir = std::env::var("WEB_DIST_DIR").unwrap_or_else(|_| "clients/web/dist".to_owned());
+    let web_path = Path::new(&web_dir);
+    let web_serve = MapResponseBody::new(
+        ServeDir::new(web_path).not_found_service(ServeFile::new(web_path.join("index.html"))),
+        axum::body::Body::new,
+    );
+    if !web_path.is_dir() {
+        warn!(dir = %web_dir, "WEB_DIST_DIR 不存在，静态托管不可用（纯 API 服务不受影响）");
+    }
+    let app: Router = adapter_http::router(http_state)
+        .merge(adapter_mcp::router(mcp_state))
+        .fallback(move |req: Request<axum::body::Body>| {
+            let web_serve = web_serve.clone();
+            async move {
+                let path = req.uri().path();
+                if path.starts_with("/api") || path.starts_with("/mcp") {
+                    return (StatusCode::NOT_FOUND, "not found").into_response();
+                }
+                match web_serve.oneshot(req).await {
+                    Ok(resp) => resp.into_response(),
+                    Err(_) => StatusCode::NOT_FOUND.into_response(),
+                }
+            }
+        });
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;

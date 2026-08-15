@@ -193,7 +193,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 ├── migrations/                  # SQL 迁移脚本
 ├── skills/                      # 内置 Skill 目录（一个子文件夹一个 skill，内含 skill.md）
 ├── scripts/                     # 工程脚本：门禁 / cross 交叉编译 / 安装包打包
-├── deploy/                      # 部署资产：server Dockerfile（仅 COPY musl 二进制）+ web Dockerfile（nginx）+ compose
+├── deploy/                      # 部署资产：server Dockerfile（仅 COPY musl 二进制）+ compose
 ├── .github/workflows/           # CI：cross 编译 musl + trunk 编译 web + 安卓/桌面包 + 自动 Release
 └── docs/                        # 架构 / 需求文档与 UI 原型
 ```
@@ -467,20 +467,20 @@ Agent 生成（原始数据）                使用过程（派生数据）
 起步阶段单机部署，Docker Compose 编排（`deploy/`）：
 
 ```
-┌────────────────────────────────────────────────────┐
-│  单台云服务器（2C4G 起步）                            │
-│  ┌──────────────┐   ┌───────────────┐   ┌────────┐ │
-│  │ web（nginx    │──▶│ server（Rust   │──▶│ PostgreSQL │
-│  │  静态 + 反代    │   │  单进程 musl，   │   │  16    │ │
-│  │  /api /mcp）   │   │  REST + MCP）   │   └────────┘ │
-│  └──────────────┘   └───────────────┘              │
-└────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────┐
+│  单台云服务器（2C4G 起步）                      │
+│  ┌──────────────────┐   ┌───────────────┐  │
+│  │ server（Rust 单进程 │──▶│ PostgreSQL 16 │  │
+│  │  musl 静态二进制，     │   └───────────────┘  │
+│  │  REST + MCP + 静态托管） │                   │
+│  └──────────────────┘                        │
+└────────────────────────────────────────────┘
 ```
 
-- **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制 + trunk 编译前端 web 产物，`scripts/package-server.sh` 打成安装包（tar.gz：`deploy/` + `skills/` + 二进制按仓库路径 + `clients/web/dist`，解压即部署源）。`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录由 compose 只读挂载（`../skills:/app/skills:ro`），宿主直接编辑 skills/ 即更新，无需重建镜像。
-- **前端 web 也走 docker**：`deploy/web.Dockerfile`（nginx:1.27-alpine）只 COPY trunk 产物与 `deploy/nginx.conf`，nginx 静态服务 + 同域反代 `/api` 与 `/mcp` 到 server 容器——前端 API 基址走浏览器运行期同源兜底（location.origin），无需构建期注入；MCP 走 streamable HTTP（SSE 流式），反代关缓冲、放长超时。
-- **compose 编排三个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `server`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT` 环境变量注入）+ `web`（依赖 server 健康后启动，浏览器访问 `http://<host>:8081`，MCP 端点对外为 `http://<host>:8081/mcp`）。
-- **CI 走完直接发 Release**：gate + build-musl + android + desktop 通过后，推 main 即自动创建 GitHub Release（tag `v<version>-<sha>`），上传**三个独立交付物**——服务端部署包（tar.gz，docker 部署源）、安卓 APK（debug 可安装验证）、桌面端安装包（.deb / .AppImage），无需手动打 tag。
+- **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制 + trunk 编译前端 web 产物，`scripts/package-server.sh` 打成安装包（tar.gz：`deploy/` + `skills/` + 二进制按仓库路径 + `clients/web/dist`，解压即部署源）。`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录与前端 web 产物由 compose 只读挂载（`../skills:/app/skills:ro`、`../clients/web/dist:/app/clients/web/dist:ro`），宿主直接替换挂载目录内容即更新，无需重建镜像。
+- **前端由服务端静态托管**：不做 nginx 容器。bootstrap 挂 SPA fallback——REST 与 MCP 路由优先，其余路径由 server 直接 serve 前端产物（`WEB_DIST_DIR`，默认相对路径 `clients/web/dist`，与 skills 同挂载模式），未命中文件回退 `index.html`；`/api` 与 `/mcp` 的未匹配路径保持 404，不回退到页面。前端 API 基址走浏览器运行期同源兜底（location.origin），与 MCP 天然同源。
+- **compose 编排两个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `server`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT` 环境变量注入）。浏览器访问 `http://<host>:8080`，MCP 端点对外为 `http://<host>:8080/mcp`。
+- **打固定版本 tag 才发 Release**：推送 `v*` tag（如 `v0.1.0`，版本号手动固定）触发；gate + build-musl + android + desktop 通过后创建 GitHub Release（用所打的 tag），上传**三个独立交付物**——服务端部署包（tar.gz，docker 部署源）、安卓 APK（debug 可安装验证）、桌面端安装包（.deb / .AppImage）。日常推 main 不发。
 - **数据库迁移内置**：sqlx::migrate! 编译期嵌入迁移脚本，server 启动时自动执行，镜像无需挂载 migrations/。
 - TLS 与域名反代不在 compose 内（由部署侧网关 / 平台另行处理）；数据库备份（每日 pg_dump → 对象存储）由部署侧 cron 或托管服务承担，不再内置 sidecar。
 - 服务端无推理负载，2C4G 可支撑数千日活；瓶颈出现时优先升配。

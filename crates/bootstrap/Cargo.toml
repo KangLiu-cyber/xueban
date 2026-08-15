@@ -12,5 +12,7 @@ axum = "0.8"
 domain = { path = "../domain" }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "map-response-body"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
