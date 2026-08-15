@@ -70,17 +70,17 @@ pub(crate) async fn init_data(state: AppState) {
 }
 
 fn topbar_title(state: AppState) -> (String, String) {
-    if let Some((t, s)) = state.topbar_override.get_untracked() {
+    if let Some((t, s)) = state.topbar_override.get() {
         return (t, s);
     }
-    match state.view.get_untracked() {
+    match state.view.get() {
         View::Quiz => ("刷题".into(), "按范围抽题，即时判分".into()),
         View::Wrong => ("错题本".into(), "反复重做直到掌握".into()),
         View::Assembly => ("组卷".into(), "挑选题目，一键组卷模考".into()),
         View::Mock => ("模考".into(), "限时答题，自动判分".into()),
-        View::Notes => match state.episode.get_untracked() {
+        View::Notes => match state.episode.get() {
             Some((c, e)) => {
-                let courses = state.courses.get_untracked();
+                let courses = state.courses.get();
                 let sub = courses
                     .get(c)
                     .map(|course| format!("{} · {}", course.name, course.subject))
@@ -93,7 +93,7 @@ fn topbar_title(state: AppState) -> (String, String) {
 }
 
 fn cd_chip_text(state: AppState) -> String {
-    let d = state.workspace.get_untracked().and_then(|w| w.exam_date);
+    let d = state.workspace.get().and_then(|w| w.exam_date);
     match d {
         Some(d) => format!("⏳ 距离考试 {} 天", state::exam_days_left(Some(d))),
         None => "⏳ 距离考试 -- 天".to_string(),
@@ -228,8 +228,11 @@ fn Sidebar(state: AppState, user_menu: RwSignal<bool>) -> impl IntoView {
     let quiz_count = move || format!("{} 题", state.pool.get().len());
     let wrong_count = move || state.wrong_badge.get();
     let tree_html = move || {
-        let map = episode_map(&state.courses.get_untracked());
-        tree_rows(state, &state.tree.get_untracked(), &map)
+        // P1-2：订阅 courses / tree，目录加载与集数变化后自动重渲染
+        let courses = state.courses.get();
+        let map = episode_map(&courses);
+        let tree = state.tree.get();
+        tree_rows(state, &tree, &map)
     };
     let do_logout = move |_| {
         let st = state;

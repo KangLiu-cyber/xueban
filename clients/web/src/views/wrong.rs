@@ -43,9 +43,10 @@ fn passes(state: AppState, f: WrongFilter, item: &WrongListItem) -> bool {
 }
 
 fn filtered(state: AppState, f: WrongFilter) -> Vec<WrongListItem> {
+    // P1-3：订阅 wrong_list，错题加载 / 重做后列表自动刷新
     state
         .wrong_list
-        .get_untracked()
+        .get()
         .into_iter()
         .filter(|it| passes(state, f, it))
         .collect()
@@ -54,7 +55,7 @@ fn filtered(state: AppState, f: WrongFilter) -> Vec<WrongListItem> {
 fn filter_count(state: AppState, f: WrongFilter) -> usize {
     state
         .wrong_list
-        .get_untracked()
+        .get()
         .iter()
         .filter(|it| passes(state, f, it))
         .count()

@@ -86,7 +86,7 @@ fn filtered_pool(
 ) -> Vec<QuestionBrief> {
     state
         .pool
-        .get_untracked()
+        .get()
         .into_iter()
         .filter(|q| passes(state, q, subjects, sources, types))
         .collect()
@@ -105,7 +105,8 @@ fn selected_questions(state: AppState) -> Vec<QuestionBrief> {
 
 /// 已选统计：★考点 / 含错题 / 综合知识 / 案例分析。
 pub(crate) fn cart_stats(state: AppState) -> (u32, u32, u32, u32) {
-    let sel = state.selected.get_untracked();
+    // P1-4：订阅 selected / pool，勾选与题库加载后统计卡即时刷新
+    let sel = state.selected.get();
     if sel.is_empty() {
         return (0, 0, 0, 0);
     }
@@ -113,7 +114,7 @@ pub(crate) fn cart_stats(state: AppState) -> (u32, u32, u32, u32) {
     let mut wrong = 0u32;
     let mut comp = 0u32;
     let mut case = 0u32;
-    for q in &state.pool.get_untracked() {
+    for q in &state.pool.get() {
         if !sel.contains(&q.id) {
             continue;
         }
