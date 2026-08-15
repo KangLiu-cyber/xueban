@@ -251,7 +251,7 @@ private fun RowScope.AuthTab(text: String, active: Boolean, onClick: () -> Unit)
             .clip(RoundedCornerShape(8.dp))
             .then(
                 // 原型 .auth-tab.active 带 box-shadow：激活页签浮起。
-                if (active) Modifier.shadow(2.dp, RoundedCornerShape(8.dp), Xb.shadow, Xb.shadow)
+                if (active) Modifier.shadow(2.dp, RoundedCornerShape(8.dp), ambientColor = Xb.shadow, spotColor = Xb.shadow)
                 else Modifier
             )
             .background(if (active) Xb.surface else Color.Transparent)
