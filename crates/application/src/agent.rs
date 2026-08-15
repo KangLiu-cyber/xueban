@@ -21,7 +21,7 @@ pub const MAX_QUESTIONS_PER_BATCH: usize = 200;
 pub const CAPABILITY_VERSION: u32 = 1;
 
 /// Agent 提交的题目入参（无 id/归属字段，归属由上下文与调用参数给定）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuestionInput {
     pub qtype: QuestionType,
     pub stem: String,
@@ -31,7 +31,7 @@ pub struct QuestionInput {
 }
 
 /// AgentBootstrap 返回值：Skill 定义、备考提示词、工具清单。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentCapability {
     pub skill: String,
     pub prompt: String,
@@ -40,7 +40,7 @@ pub struct AgentCapability {
 }
 
 /// ReportStatus 返回值：客户端刷新"AI 生成进度"用。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentStatus {
     pub workspaces: Vec<Workspace>,
     /// 最近行为（新→旧）。

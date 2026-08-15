@@ -80,7 +80,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "domain",
- "schemars",
  "serde",
  "serde_json",
  "tokio",
@@ -420,7 +419,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
- "schemars",
  "serde",
 ]
 

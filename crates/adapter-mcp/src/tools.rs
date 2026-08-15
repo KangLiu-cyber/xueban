@@ -6,15 +6,17 @@
 //! Agent 的写入（create_item/write_item）固定经 agent_* 用例落 agent_write
 //! 事件供客户端溯源。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use application::agent::{AgentCapability, AgentStatus, QuestionInput};
 use axum::http::request::Parts;
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use domain::error::Error;
-use domain::event::Event;
+use domain::event::{Event, EventAction};
 use domain::identity::User;
-use domain::space::{Annotation, AnnotationAuthor, Item, ItemKind, ItemNode, Workspace};
+use domain::practice::{Answer, QuestionType};
+use domain::space::{Annotation, AnnotationAuthor, Creator, Item, ItemKind, ItemNode, Workspace};
 use rmcp::ErrorData;
 use rmcp::handler::server::common::Extension;
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -71,12 +73,13 @@ impl McpService {
     async fn bootstrap(
         &self,
         Extension(parts): Extension<Parts>,
-    ) -> Result<Json<AgentCapability>, ErrorData> {
+    ) -> Result<Json<AgentCapabilityDto>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .agent
             .bootstrap(user.id)
             .await
+            .map(AgentCapabilityDto::from)
             .map(Json)
             .map_err(map_err)
     }
@@ -91,12 +94,13 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<CreateWorkspaceInput>,
-    ) -> Result<Json<Workspace>, ErrorData> {
+    ) -> Result<Json<WorkspaceDto>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .space
             .create_workspace(user.id, input.name, input.exam_goal, input.exam_date)
             .await
+            .map(WorkspaceDto::from)
             .map(Json)
             .map_err(map_err)
     }
@@ -111,7 +115,7 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<CreateItemInput>,
-    ) -> Result<Json<Item>, ErrorData> {
+    ) -> Result<Json<ItemDto>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .space
@@ -119,11 +123,12 @@ impl McpService {
                 user.id,
                 input.workspace_id,
                 input.parent_id,
-                input.kind,
+                input.kind.into(),
                 input.name,
                 input.content,
             )
             .await
+            .map(ItemDto::from)
             .map(Json)
             .map_err(map_err)
     }
@@ -138,12 +143,13 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<WriteItemInput>,
-    ) -> Result<Json<Item>, ErrorData> {
+    ) -> Result<Json<ItemDto>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .space
             .agent_write_item(user.id, input.item_id, input.content)
             .await
+            .map(ItemDto::from)
             .map(Json)
             .map_err(map_err)
     }
@@ -158,12 +164,13 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<ReadItemInput>,
-    ) -> Result<Json<Item>, ErrorData> {
+    ) -> Result<Json<ItemDto>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .space
             .read_item(user.id, input.item_id)
             .await
+            .map(ItemDto::from)
             .map(Json)
             .map_err(map_err)
     }
@@ -184,7 +191,11 @@ impl McpService {
             .space
             .tree(user.id, input.workspace_id)
             .await
-            .map(|items| Json(ItemTreeOutput { items }))
+            .map(|items| {
+                Json(ItemTreeOutput {
+                    items: items.into_iter().map(ItemNodeDto::from).collect(),
+                })
+            })
             .map_err(map_err)
     }
 
@@ -198,7 +209,7 @@ impl McpService {
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<AddAnnotationInput>,
-    ) -> Result<Json<Annotation>, ErrorData> {
+    ) -> Result<Json<AnnotationDto>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .space
@@ -210,6 +221,7 @@ impl McpService {
                 AnnotationAuthor::Ai,
             )
             .await
+            .map(AnnotationDto::from)
             .map(Json)
             .map_err(map_err)
     }
@@ -232,7 +244,11 @@ impl McpService {
                 user.id,
                 input.workspace_id,
                 input.source_item_id,
-                input.questions,
+                input
+                    .questions
+                    .into_iter()
+                    .map(QuestionInput::from)
+                    .collect(),
             )
             .await
             .map(|ids| Json(SavedQuestionsOutput { ids }))
@@ -256,7 +272,11 @@ impl McpService {
             .agent
             .read_events(user.id, limit)
             .await
-            .map(|events| Json(EventsOutput { events }))
+            .map(|events| {
+                Json(EventsOutput {
+                    events: events.into_iter().map(EventDto::from).collect(),
+                })
+            })
             .map_err(map_err)
     }
 
@@ -269,12 +289,13 @@ impl McpService {
     async fn report_status(
         &self,
         Extension(parts): Extension<Parts>,
-    ) -> Result<Json<AgentStatus>, ErrorData> {
+    ) -> Result<Json<AgentStatusDto>, ErrorData> {
         let user = self.user(&parts)?;
         self.state
             .agent
             .report_status(user.id)
             .await
+            .map(AgentStatusDto::from)
             .map(Json)
             .map_err(map_err)
     }
@@ -317,7 +338,7 @@ pub struct CreateWorkspaceInput {
 pub struct CreateItemInput {
     pub workspace_id: i64,
     pub parent_id: Option<i64>,
-    pub kind: ItemKind,
+    pub kind: ItemKindDto,
     pub name: String,
     pub content: Option<String>,
 }
@@ -356,7 +377,7 @@ pub struct SaveQuestionsInput {
     pub workspace_id: i64,
     /// 题源笔记（集）id：题目必须归属到笔记（集）。
     pub source_item_id: i64,
-    pub questions: Vec<QuestionInput>,
+    pub questions: Vec<QuestionInputDto>,
 }
 
 /// get_events 入参。
@@ -369,7 +390,7 @@ pub struct GetEventsInput {
 /// list_items 出参（rmcp 要求工具输出 schema 根类型为 object，数组须包装）。
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ItemTreeOutput {
-    pub items: Vec<ItemNode>,
+    pub items: Vec<ItemNodeDto>,
 }
 
 /// save_questions 出参：新写入的题目 id 列表。
@@ -381,5 +402,297 @@ pub struct SavedQuestionsOutput {
 /// get_events 出参。
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct EventsOutput {
-    pub events: Vec<Event>,
+    pub events: Vec<EventDto>,
+}
+
+/// P2-13：协议层 schema 关注点收口在 adapter-mcp（rmcp 要求工具入参/出参实现
+/// JsonSchema，孤儿规则禁止为 domain 类型实现）。以下 DTO 与领域/应用类型
+/// 逐字段镜像，serde 属性一致（snake_case / untagged），wire 格式与先前完全
+/// 不变；domain 与 application 不再依赖 schemars。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkspaceDto {
+    pub id: i64,
+    pub user_id: i64,
+    pub name: String,
+    pub exam_goal: String,
+    pub exam_date: Option<NaiveDate>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemKindDto {
+    Dir,
+    Note,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CreatorDto {
+    Agent,
+    User,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ItemDto {
+    pub id: i64,
+    pub workspace_id: i64,
+    pub parent_id: Option<i64>,
+    pub kind: ItemKindDto,
+    pub name: String,
+    pub content: Option<String>,
+    pub created_by: CreatorDto,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ItemNodeDto {
+    pub item: ItemDto,
+    pub children: Vec<ItemNodeDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AnnotationAuthorDto {
+    Ai,
+    User,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AnnotationDto {
+    pub id: i64,
+    pub item_id: i64,
+    pub user_id: i64,
+    pub author: AnnotationAuthorDto,
+    pub anchor: String,
+    pub text: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum EventActionDto {
+    Annotate,
+    Answer,
+    Wrong,
+    AgentWrite,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct EventDto {
+    pub id: i64,
+    pub user_id: i64,
+    pub workspace_id: Option<i64>,
+    pub item_id: Option<i64>,
+    pub action: EventActionDto,
+    pub payload: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionTypeDto {
+    Single,
+    Multi,
+    Judge,
+}
+
+/// 线格式与 domain::practice::Answer 一致（untagged，§8.1）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum AnswerDto {
+    Single(usize),
+    Multi(BTreeSet<usize>),
+    Judge(bool),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct QuestionInputDto {
+    pub qtype: QuestionTypeDto,
+    pub stem: String,
+    pub options: Vec<String>,
+    pub answer: AnswerDto,
+    pub explanation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentCapabilityDto {
+    pub skill: String,
+    pub prompt: String,
+    pub tools: Vec<String>,
+    pub version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AgentStatusDto {
+    pub workspaces: Vec<WorkspaceDto>,
+    pub recent_events: Vec<EventDto>,
+}
+
+// ---- DTO ↔ 领域类型转换（仅实现工具路径实际用到的方向） ----
+
+impl From<ItemKindDto> for ItemKind {
+    fn from(v: ItemKindDto) -> Self {
+        match v {
+            ItemKindDto::Dir => ItemKind::Dir,
+            ItemKindDto::Note => ItemKind::Note,
+        }
+    }
+}
+
+impl From<ItemKind> for ItemKindDto {
+    fn from(v: ItemKind) -> Self {
+        match v {
+            ItemKind::Dir => ItemKindDto::Dir,
+            ItemKind::Note => ItemKindDto::Note,
+        }
+    }
+}
+
+impl From<Creator> for CreatorDto {
+    fn from(v: Creator) -> Self {
+        match v {
+            Creator::Agent => CreatorDto::Agent,
+            Creator::User => CreatorDto::User,
+        }
+    }
+}
+
+impl From<Item> for ItemDto {
+    fn from(v: Item) -> Self {
+        Self {
+            id: v.id,
+            workspace_id: v.workspace_id,
+            parent_id: v.parent_id,
+            kind: v.kind.into(),
+            name: v.name,
+            content: v.content,
+            created_by: v.created_by.into(),
+            created_at: v.created_at,
+            updated_at: v.updated_at,
+        }
+    }
+}
+
+impl From<ItemNode> for ItemNodeDto {
+    fn from(v: ItemNode) -> Self {
+        Self {
+            item: v.item.into(),
+            children: v.children.into_iter().map(Self::from).collect(),
+        }
+    }
+}
+
+impl From<Workspace> for WorkspaceDto {
+    fn from(v: Workspace) -> Self {
+        Self {
+            id: v.id,
+            user_id: v.user_id,
+            name: v.name,
+            exam_goal: v.exam_goal,
+            exam_date: v.exam_date,
+            created_at: v.created_at,
+        }
+    }
+}
+
+impl From<AnnotationAuthor> for AnnotationAuthorDto {
+    fn from(v: AnnotationAuthor) -> Self {
+        match v {
+            AnnotationAuthor::Ai => AnnotationAuthorDto::Ai,
+            AnnotationAuthor::User => AnnotationAuthorDto::User,
+        }
+    }
+}
+
+impl From<Annotation> for AnnotationDto {
+    fn from(v: Annotation) -> Self {
+        Self {
+            id: v.id,
+            item_id: v.item_id,
+            user_id: v.user_id,
+            author: v.author.into(),
+            anchor: v.anchor,
+            text: v.text,
+            created_at: v.created_at,
+        }
+    }
+}
+
+impl From<EventAction> for EventActionDto {
+    fn from(v: EventAction) -> Self {
+        match v {
+            EventAction::Annotate => EventActionDto::Annotate,
+            EventAction::Answer => EventActionDto::Answer,
+            EventAction::Wrong => EventActionDto::Wrong,
+            EventAction::AgentWrite => EventActionDto::AgentWrite,
+        }
+    }
+}
+
+impl From<Event> for EventDto {
+    fn from(v: Event) -> Self {
+        Self {
+            id: v.id,
+            user_id: v.user_id,
+            workspace_id: v.workspace_id,
+            item_id: v.item_id,
+            action: v.action.into(),
+            payload: v.payload,
+            created_at: v.created_at,
+        }
+    }
+}
+
+impl From<QuestionTypeDto> for QuestionType {
+    fn from(v: QuestionTypeDto) -> Self {
+        match v {
+            QuestionTypeDto::Single => QuestionType::Single,
+            QuestionTypeDto::Multi => QuestionType::Multi,
+            QuestionTypeDto::Judge => QuestionType::Judge,
+        }
+    }
+}
+
+impl From<AnswerDto> for Answer {
+    fn from(v: AnswerDto) -> Self {
+        match v {
+            AnswerDto::Single(i) => Answer::Single(i),
+            AnswerDto::Multi(s) => Answer::Multi(s),
+            AnswerDto::Judge(b) => Answer::Judge(b),
+        }
+    }
+}
+
+impl From<QuestionInputDto> for QuestionInput {
+    fn from(v: QuestionInputDto) -> Self {
+        Self {
+            qtype: v.qtype.into(),
+            stem: v.stem,
+            options: v.options,
+            answer: v.answer.into(),
+            explanation: v.explanation,
+        }
+    }
+}
+
+impl From<AgentCapability> for AgentCapabilityDto {
+    fn from(v: AgentCapability) -> Self {
+        Self {
+            skill: v.skill,
+            prompt: v.prompt,
+            tools: v.tools,
+            version: v.version,
+        }
+    }
+}
+
+impl From<AgentStatus> for AgentStatusDto {
+    fn from(v: AgentStatus) -> Self {
+        Self {
+            workspaces: v.workspaces.into_iter().map(WorkspaceDto::from).collect(),
+            recent_events: v.recent_events.into_iter().map(EventDto::from).collect(),
+        }
+    }
 }
