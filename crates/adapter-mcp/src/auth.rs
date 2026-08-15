@@ -4,7 +4,8 @@
 //! 把 `AuthUser` 注入请求扩展；rmcp 将
 //! http Parts（含扩展）拷入 JSON-RPC 消息扩展，工具经 `Extension<Parts>`
 //! 取回用户上下文——工具入参中不存在用户身份字段（§10 数据隔离）。
-//! 限流为固定窗口，按 token 60 次/分钟（§8.2 强制规则）。
+//! 限流为固定窗口，按 token 60 次/分钟（§8.2 强制规则）；
+//! 桶数达到阈值时清扫过期桶，防止 key 无限增长占满内存。
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -22,15 +23,20 @@ use serde_json::json;
 
 use crate::McpState;
 
-/// 固定窗口限流器：key → (窗口起点, 计数)。窗口到点即重置。
+/// 固定窗口限流器：key → (窗口起点, 计数)。窗口到点即重置；
+/// 桶数达到阈值时清扫过期桶，防止 key（token/IP）无限增长占满内存。
 pub struct RateLimiter {
     buckets: Mutex<HashMap<String, Bucket>>,
 }
 
 struct Bucket {
     window_start: Instant,
+    window: Duration,
     count: u32,
 }
+
+/// 桶数上限：达到后触发过期桶清扫。
+const EVICT_AT: usize = 10_000;
 
 impl Default for RateLimiter {
     fn default() -> Self {
@@ -44,11 +50,15 @@ impl RateLimiter {
     /// 返回 false 表示超限（本次请求应被拒绝）。
     pub fn check(&self, key: &str, limit: u32, window: Duration) -> bool {
         let mut buckets = self.buckets.lock().unwrap_or_else(|p| p.into_inner());
+        if buckets.len() >= EVICT_AT {
+            buckets.retain(|_, b| b.window_start.elapsed() < b.window);
+        }
         let bucket = buckets.entry(key.to_owned()).or_insert_with(|| Bucket {
             window_start: Instant::now(),
+            window,
             count: 0,
         });
-        if bucket.window_start.elapsed() >= window {
+        if bucket.window_start.elapsed() >= bucket.window {
             bucket.window_start = Instant::now();
             bucket.count = 0;
         }

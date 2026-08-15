@@ -4,7 +4,8 @@
 //! `AuthUser` 注入请求扩展，处理器经 `AuthUser` 提取器拿到 user_id
 //! （数据隔离第一道防线）。
 //! 限流为固定窗口：注册/登录按 IP（30/min），其余按 token（300/min），
-//! 无 token 时退化为 IP。
+//! 鉴权通过后另按账号（user_id）封顶（1200/min）；无 token 时退化为 IP。
+//! 计数为进程内存（单机部署足够，Redis 二期可选引入，见架构文档 §9）。
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -22,15 +23,20 @@ use serde_json::json;
 
 use crate::AppState;
 
-/// 固定窗口限流器：key → (窗口起点, 计数)。窗口到点即重置。
+/// 固定窗口限流器：key → (窗口起点, 计数)。窗口到点即重置；
+/// 桶数达到阈值时清扫过期桶，防止 key（IP/token）无限增长占满内存。
 pub struct RateLimiter {
     buckets: Mutex<HashMap<String, Bucket>>,
 }
 
 struct Bucket {
     window_start: Instant,
+    window: Duration,
     count: u32,
 }
+
+/// 桶数上限：达到后触发过期桶清扫。
+const EVICT_AT: usize = 10_000;
 
 impl Default for RateLimiter {
     fn default() -> Self {
@@ -44,11 +50,15 @@ impl RateLimiter {
     /// 返回 false 表示超限（本次请求应被拒绝）。
     pub fn check(&self, key: &str, limit: u32, window: Duration) -> bool {
         let mut buckets = self.buckets.lock().unwrap_or_else(|p| p.into_inner());
+        if buckets.len() >= EVICT_AT {
+            buckets.retain(|_, b| b.window_start.elapsed() < b.window);
+        }
         let bucket = buckets.entry(key.to_owned()).or_insert_with(|| Bucket {
             window_start: Instant::now(),
+            window,
             count: 0,
         });
-        if bucket.window_start.elapsed() >= window {
+        if bucket.window_start.elapsed() >= bucket.window {
             bucket.window_start = Instant::now();
             bucket.count = 0;
         }
@@ -99,6 +109,13 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
         .await
     {
         Ok(user) => {
+            // 账号级封顶：多 token（多设备/换发凭证）合计不得突破账号上限。
+            if !state
+                .limiter
+                .check(&format!("user:{}", user.id), ACCOUNT_LIMIT, WINDOW)
+            {
+                return crate::error::too_many_requests();
+            }
             req.extensions_mut().insert(AuthUser(user));
             next.run(req).await
         }
@@ -115,6 +132,8 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
 
 const REGISTER_LIMIT: u32 = 30;
 const API_LIMIT: u32 = 300;
+/// 账号级封顶：单 token 上限的 4 倍，为多设备正常使用留余量。
+const ACCOUNT_LIMIT: u32 = 1200;
 const WINDOW: Duration = Duration::from_secs(60);
 
 /// 注册/登录限流：按 IP。
@@ -179,5 +198,19 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
         // 窗口已过，计数重置。
         assert!(limiter.check("k", 1, window));
+    }
+
+    #[test]
+    fn limiter_evicts_stale_buckets_when_map_grows() {
+        let limiter = RateLimiter::default();
+        let tiny = Duration::from_millis(1);
+        for i in 0..=EVICT_AT {
+            assert!(limiter.check(&format!("k{i}"), 1, tiny));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+        // 新 key 触发清扫：过期桶被移除，桶数回落到阈值以下。
+        assert!(limiter.check("fresh", 1, Duration::from_secs(60)));
+        let buckets = limiter.buckets.lock().unwrap();
+        assert!(buckets.len() < EVICT_AT);
     }
 }
