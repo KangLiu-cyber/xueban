@@ -101,7 +101,18 @@ where
                     .ok_or_else(|| Error::NotFound("组卷来源不存在".to_owned()))?;
             }
         }
-        let sources = config.source_item_ids.clone().unwrap_or_default();
+        let mut sources = config.source_item_ids.clone().unwrap_or_default();
+        // P1-8：config.scope 携带集数节点 id（安卓端以字符串传入），解析后并入来源过滤；
+        // 非数字文本为自由快照，不参与筛选。
+        if let Some(scope) = config.scope.as_ref().and_then(|s| s.parse::<i64>().ok())
+            && !sources.contains(&scope)
+        {
+            self.items
+                .find_by_id(scope, user_id)
+                .await?
+                .ok_or_else(|| Error::NotFound("组卷范围不存在".to_owned()))?;
+            sources.push(scope);
+        }
         let qtypes = config.question_types.clone().unwrap_or_default();
         let mut drawn = self
             .questions
@@ -384,6 +395,49 @@ mod tests {
             ..config(1)
         };
         assert!(c.svc.assemble(1, c.ws_id, None, bad).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn assemble_filters_by_scope_item_id() {
+        let c = ctx().await;
+        // 另一集 + 一题：验证 scope 按集数过滤。
+        let item2 = crate::inmem::insert_item(&c.svc.items, c.ws_id, "第2集", ItemKind::Note).await;
+        c.svc
+            .questions
+            .insert_many(&[Question {
+                id: 0,
+                workspace_id: c.ws_id,
+                source_item_id: item2,
+                qtype: QuestionType::Single,
+                stem: "第二集题".into(),
+                options: vec!["A".into(), "B".into()],
+                answer: Answer::Single(1),
+                explanation: None,
+                created_at: Utc::now(),
+            }])
+            .await
+            .unwrap();
+        // scope 携带集数节点 id（字符串）→ 只取该集题目。
+        let scoped = PaperConfig {
+            scope: Some(c.item_id.to_string()),
+            ..config(3)
+        };
+        let b = c.svc.assemble(1, c.ws_id, None, scoped).await.unwrap();
+        assert_eq!(b.paper.question_ids.len(), 3);
+        assert!(b.paper.question_ids.iter().all(|id| c.q_ids.contains(id)));
+    }
+
+    #[tokio::test]
+    async fn assemble_rejects_unknown_scope() {
+        let c = ctx().await;
+        let bad = PaperConfig {
+            scope: Some("999".into()),
+            ..config(1)
+        };
+        assert!(matches!(
+            c.svc.assemble(1, c.ws_id, None, bad).await,
+            Err(Error::NotFound(_))
+        ));
     }
 
     #[tokio::test]
