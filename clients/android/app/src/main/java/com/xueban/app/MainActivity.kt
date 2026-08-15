@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -63,7 +64,8 @@ fun XueBanApp() {
         if (state.toastMsg == msg) state.toastMsg = null
     }
 
-    Box(Modifier.fillMaxSize().background(Xb.bg)) {
+    // edge-to-edge 下正文整体下移，避开状态栏时间与摄像头挖孔。
+    Box(Modifier.fillMaxSize().statusBarsPadding().background(Xb.bg)) {
         if (!state.loggedIn) {
             LoginScreen(state, onEntered = {})
         } else {
