@@ -8,12 +8,11 @@
 //! 桶数达到阈值时清扫过期桶，防止 key 无限增长占满内存。
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use axum::Json;
-use axum::extract::{ConnectInfo, Request, State};
+use axum::extract::{Request, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
@@ -24,7 +23,7 @@ use serde_json::json;
 use crate::McpState;
 
 /// 固定窗口限流器：key → (窗口起点, 计数)。窗口到点即重置；
-/// 桶数达到阈值时清扫过期桶，防止 key（token/IP）无限增长占满内存。
+/// 桶数达到阈值时清扫过期桶，防止 key（token）无限增长占满内存。
 pub struct RateLimiter {
     buckets: Mutex<HashMap<String, Bucket>>,
 }
@@ -86,20 +85,13 @@ pub struct AuthUser(pub User);
 const MCP_LIMIT: u32 = 60;
 const WINDOW: Duration = Duration::from_secs(60);
 
-/// MCP 网关鉴权中间件：先按 token 限流（无 token 退化为 IP），
-/// 再校验 token（无效/已吊销 → 401），通过后注入 `AuthUser`。
+/// MCP 网关鉴权中间件：先按 token 限流，再校验 token
+/// （无效/已吊销 → 401），通过后注入 `AuthUser`。
 pub async fn require_auth(State(state): State<McpState>, mut req: Request, next: Next) -> Response {
     let Some(token) = bearer_token(req.headers()) else {
         return error_response(StatusCode::UNAUTHORIZED, "未登录");
     };
-    let key = match req
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|c| c.0.to_string())
-    {
-        Some(ip) => format!("token:{token}:{ip}"),
-        None => format!("token:{token}"),
-    };
+    let key = format!("token:{token}");
     if !state.limiter.check(&key, MCP_LIMIT, WINDOW) {
         return error_response(StatusCode::TOO_MANY_REQUESTS, "请求过于频繁，请稍后再试");
     }
