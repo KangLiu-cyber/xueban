@@ -69,11 +69,12 @@ jobs:
           java-version: '17'
       - name: 构建 APK（debug 可安装验证，端点指向生产域名）
         run: ./gradlew :app:assembleDebug -PapiBaseUrl=https://buildstore.mjcode.top/api/v1 -q
-      - name: 上传 APK
+      - name: 上传 APK（path 相对仓库根解析，working-directory 只作用于 run 步骤）
         uses: actions/upload-artifact@v4
         with:
           name: xueban-android
-          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          path: clients/android/app/build/outputs/apk/debug/*.apk
 
   desktop:
     name: 构建桌面端安装包
@@ -98,6 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xueban-desktop
+          if-no-files-found: error
           path: |
             clients/desktop/target/release/bundle/deb/*.deb
             clients/desktop/target/release/bundle/appimage/*.AppImage
@@ -121,8 +123,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
-          # artifact 保留各自 job 内的相对路径（apk 嵌套在 app/build/... 下），先全部收集到 dist 根
-          find dist -type f \( -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.AppImage' \) -exec mv {} dist/ \;
-          gh release create "$tag" dist/*.tar.gz dist/*.apk dist/*.deb dist/*.AppImage \
+          # 不用 glob（避免 shell 匹配不到时失败），find 收集全部交付物后显式传给 gh
+          mapfile -t files < <(find dist -type f \( -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.AppImage' \))
+          if [ "${#files[@]}" -lt 3 ]; then
+            echo "交付物不齐（共 ${#files[@]} 个）：${files[*]}"
+            exit 1
+          fi
+          gh release create "$tag" "${files[@]}" \
             --title "xueban ${tag}" \
             --notes "CI 自动发布，含三个独立的包：服务端部署包（tar.gz，docker 部署源）、安卓 APK、桌面端安装包"
