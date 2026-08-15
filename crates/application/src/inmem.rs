@@ -282,7 +282,8 @@ impl AnnotationRepository for InMemoryAnnotationRepository {
         Ok(id)
     }
 
-    async fn list_by_item(&self, item_id: i64) -> domain::Result<Vec<Annotation>> {
+    async fn list_by_item(&self, item_id: i64, _user_id: i64) -> domain::Result<Vec<Annotation>> {
+        // 归属校验由应用层 read_item 完成（与 Pg 实现 SQL join 的防线等价）。
         let mut list: Vec<Annotation> = self
             .annotations
             .lock()
@@ -337,10 +338,12 @@ impl QuestionRepository for InMemoryQuestionRepository {
     async fn draw(
         &self,
         workspace_id: i64,
+        _user_id: i64,
         source_item_ids: &[i64],
         qtypes: &[QuestionType],
         count: u32,
     ) -> domain::Result<Vec<Question>> {
+        // 归属校验由应用层查 Workspace 完成（与 Pg 实现 SQL join 的防线等价）。
         let map = self.questions.lock().unwrap();
         let mut out: Vec<Question> = map
             .values()

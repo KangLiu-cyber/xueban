@@ -285,7 +285,7 @@ where
     /// 列某笔记的批注（先校验笔记归属）。
     pub async fn list_annotations(&self, user_id: i64, item_id: i64) -> Result<Vec<Annotation>> {
         self.read_item(user_id, item_id).await?;
-        self.annotations.list_by_item(item_id).await
+        self.annotations.list_by_item(item_id, user_id).await
     }
 
     async fn log_agent_write(

@@ -80,8 +80,8 @@ pub trait ItemRepository {
 pub trait AnnotationRepository {
     /// 插入批注，返回落库后的新 id。
     async fn insert(&self, ann: &Annotation) -> Result<i64>;
-    /// 按笔记列出批注。
-    async fn list_by_item(&self, item_id: i64) -> Result<Vec<Annotation>>;
+    /// 按笔记列出批注（携带归属：item 属于 user，SQL 层 join 限定）。
+    async fn list_by_item(&self, item_id: i64, user_id: i64) -> Result<Vec<Annotation>>;
     /// 删除批注（须带归属校验：item 属于 user）。
     async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
 }
@@ -93,9 +93,11 @@ pub trait QuestionRepository {
     /// 按 id + 归属取题（判分/组卷回填用）。
     async fn find_by_ids(&self, ids: &[i64], user_id: i64) -> Result<Vec<Question>>;
     /// 按范围抽题：workspace 内按来源节点/题型筛选，返回最多 count 题。
+    /// 携带归属：workspace 属于 user（SQL 层 join 限定），作为隔离第二道防线。
     async fn draw(
         &self,
         workspace_id: i64,
+        user_id: i64,
         source_item_ids: &[i64],
         qtypes: &[QuestionType],
         count: u32,

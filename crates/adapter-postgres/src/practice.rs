@@ -92,16 +92,21 @@ impl QuestionRepository for PgQuestionRepository {
     async fn draw(
         &self,
         workspace_id: i64,
+        user_id: i64,
         source_item_ids: &[i64],
         qtypes: &[QuestionType],
         count: u32,
     ) -> Result<Vec<Question>> {
         // 筛选条件为空时整段省略（与 inmem 语义一致：空数组视为不过滤）。
+        // join workspaces 限定归属：workspace 属于 user，抽题跨用户读的第二道防线。
         let mut qb = QueryBuilder::<sqlx::Postgres>::new(
-            "select id, workspace_id, source_item_id, type, stem, options,
-                    answer, explanation, created_at
-             from questions where workspace_id = ",
+            "select q.id, q.workspace_id, q.source_item_id, q.type, q.stem, q.options,
+                    q.answer, q.explanation, q.created_at
+             from questions q
+             join workspaces w on w.id = q.workspace_id and w.user_id = ",
         );
+        qb.push_bind(user_id);
+        qb.push(" where q.workspace_id = ");
         qb.push_bind(workspace_id);
         if !source_item_ids.is_empty() {
             qb.push(" and source_item_id = any(");

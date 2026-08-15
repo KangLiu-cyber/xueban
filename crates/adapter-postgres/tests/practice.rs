@@ -90,28 +90,34 @@ async fn question_insert_many_find_and_draw() {
     assert_eq!(foreign[0].id, ids[3]);
 
     // draw：空筛选不过滤，count 截断，id 升序。
-    let drawn = repo.draw(ws_id, &[], &[], 2).await.expect("抽题失败");
+    let drawn = repo
+        .draw(ws_id, user_id, &[], &[], 2)
+        .await
+        .expect("抽题失败");
     assert_eq!(drawn.len(), 2);
     assert_eq!(drawn[0].id, ids[0]);
     assert_eq!(drawn[1].id, ids[1]);
 
     // 按来源与题型过滤。
-    let by_source = repo.draw(ws_id, &[11], &[], 10).await.expect("抽题失败");
+    let by_source = repo
+        .draw(ws_id, user_id, &[11], &[], 10)
+        .await
+        .expect("抽题失败");
     assert_eq!(by_source.len(), 2);
     let by_type = repo
-        .draw(ws_id, &[], &[QuestionType::Judge], 10)
+        .draw(ws_id, user_id, &[], &[QuestionType::Judge], 10)
         .await
         .expect("抽题失败");
     assert_eq!(by_type.len(), 1);
     assert_eq!(by_type[0].qtype, QuestionType::Judge);
     let both = repo
-        .draw(ws_id, &[11], &[QuestionType::Single], 10)
+        .draw(ws_id, user_id, &[11], &[QuestionType::Single], 10)
         .await
         .expect("抽题失败");
     assert_eq!(both.len(), 1);
-    // 他人空间抽不到。
+    // 他人空间抽不到：归属 join 是第二道防线（第一道在应用层校验 workspace 归属）。
     assert!(
-        repo.draw(other_ws, &[], &[], 10)
+        repo.draw(other_ws, user_id, &[], &[], 10)
             .await
             .expect("抽题失败")
             .is_empty()

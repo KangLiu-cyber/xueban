@@ -296,16 +296,29 @@ async fn annotation_lifecycle_and_ownership_delete() {
         .await
         .expect("插入失败");
 
-    let list = repo.list_by_item(note).await.expect("查询失败");
+    let list = repo.list_by_item(note, user_id).await.expect("查询失败");
     assert_eq!(list.len(), 2);
     assert_eq!(list[0].id, id1);
     assert_eq!(list[1].id, id2);
     assert_eq!(list[1].author, AnnotationAuthor::Ai);
+    // 他人查不到（归属 join 为第二道防线）。
+    assert!(
+        repo.list_by_item(note, other)
+            .await
+            .expect("查询失败")
+            .is_empty()
+    );
 
     // 他人不能删（user_id 归属校验）。
     assert!(!repo.delete(id1, other).await.expect("删除失败"));
     // 本人可删；重复删返回 false。
     assert!(repo.delete(id1, user_id).await.expect("删除失败"));
     assert!(!repo.delete(id1, user_id).await.expect("重复删除"));
-    assert_eq!(repo.list_by_item(note).await.expect("查询失败").len(), 1);
+    assert_eq!(
+        repo.list_by_item(note, user_id)
+            .await
+            .expect("查询失败")
+            .len(),
+        1
+    );
 }

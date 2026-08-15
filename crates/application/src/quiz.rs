@@ -112,7 +112,13 @@ where
         let source = scope.map(|s| vec![s]);
         let qs = self
             .questions
-            .draw(workspace_id, source.as_deref().unwrap_or(&[]), &[], count)
+            .draw(
+                workspace_id,
+                user_id,
+                source.as_deref().unwrap_or(&[]),
+                &[],
+                count,
+            )
             .await?;
         Ok(qs.into_iter().map(QuestionBrief::from).collect())
     }

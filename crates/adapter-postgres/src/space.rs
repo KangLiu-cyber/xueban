@@ -322,12 +322,17 @@ impl AnnotationRepository for PgAnnotationRepository {
         row.try_get::<i64, _>("id").map_err(map_sqlx_error)
     }
 
-    async fn list_by_item(&self, item_id: i64) -> Result<Vec<Annotation>> {
+    async fn list_by_item(&self, item_id: i64, user_id: i64) -> Result<Vec<Annotation>> {
+        // join items → workspaces 限定归属：笔记属于 user，跨用户读的第二道防线。
         let rows = sqlx::query(
-            "select id, item_id, user_id, author, anchor, text, created_at
-             from annotations where item_id = $1 order by id",
+            "select a.id, a.item_id, a.user_id, a.author, a.anchor, a.text, a.created_at
+             from annotations a
+             join items i on i.id = a.item_id
+             join workspaces w on w.id = i.workspace_id and w.user_id = $2
+             where a.item_id = $1 order by a.id",
         )
         .bind(item_id)
+        .bind(user_id)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_error)?;

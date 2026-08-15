@@ -116,7 +116,7 @@ where
         let qtypes = config.question_types.clone().unwrap_or_default();
         let mut drawn = self
             .questions
-            .draw(workspace_id, &sources, &qtypes, config.count)
+            .draw(workspace_id, user_id, &sources, &qtypes, config.count)
             .await?;
         if (drawn.len() as u32) < config.count {
             // 补齐：放宽题型，仍按来源。
@@ -124,6 +124,7 @@ where
                 .questions
                 .draw(
                     workspace_id,
+                    user_id,
                     &sources,
                     &[],
                     config.count - drawn.len() as u32,
@@ -135,7 +136,13 @@ where
             // 补齐：放宽来源，全空间取题（仍去重）。
             let extra = self
                 .questions
-                .draw(workspace_id, &[], &[], config.count - drawn.len() as u32)
+                .draw(
+                    workspace_id,
+                    user_id,
+                    &[],
+                    &[],
+                    config.count - drawn.len() as u32,
+                )
                 .await?;
             push_unique(&mut drawn, extra);
         }
