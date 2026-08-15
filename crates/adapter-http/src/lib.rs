@@ -1,6 +1,6 @@
 //! 驱动适配器：Axum REST API（/api/v1）。
 //!
-//! 与 docs/architecture.md §8.1 对齐：19 个端点全部落在此处。身份一律
+//! 与 docs/architecture.md §8.1 对齐：20 个端点全部落在此处。身份一律
 //! 由 token 解析（`require_auth` 中间件注入 `AuthUser`），不接受客户端
 //! 声明 user_id；错误映射 NotFound→404 / Conflict→409 / Invalid→400 /
 //! Storage→500。限流：注册登录按 IP（30/min），其余按 token（300/min），

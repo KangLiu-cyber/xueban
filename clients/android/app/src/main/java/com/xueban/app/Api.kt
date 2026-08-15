@@ -143,6 +143,8 @@ object Api {
     fun assemblePaper(request: AssembleRequest): PaperBundle =
         post("/papers", request)
 
+    fun getPaper(paperId: Long): PaperBundle = get("/papers/$paperId")
+
     fun submitPaper(paperId: Long, request: SubmitRequest): PaperResult =
         post("/papers/$paperId/submit", request)
 

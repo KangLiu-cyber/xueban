@@ -183,6 +183,7 @@ class AppState(context: Context) {
         examGoal = ws.examGoal
         examDate = ws.examDate ?: ""
         loadTree()
+        restoreMock()
         loggedIn = true
         freshEnter = true
     }
@@ -423,6 +424,29 @@ class AppState(context: Context) {
         mockSecs = 150 * 60
         mockResult = null
         mockDots = List(bundle.questions.size) { false }
+        // P2-12：记录未交卷试卷 id，重新打开应用后经 GET /papers/:id 恢复会话。
+        prefs.edit().putString("mock_paper_id", bundle.paper.id.toString()).apply()
+    }
+
+    /** 退出模考：清会话与恢复标记（进度不保留）。 */
+    fun exitMock() {
+        mockPaper = null
+        prefs.edit().remove("mock_paper_id").apply()
+    }
+
+    /** P2-12：重新进入应用后恢复未交卷的模考（作答清空、计时重新开始）。 */
+    fun restoreMock() {
+        val id = prefs.getString("mock_paper_id", null)?.toLongOrNull() ?: return
+        val bundle = guard("恢复模考失败") { Api.getPaper(id) } ?: run {
+            prefs.edit().remove("mock_paper_id").apply()
+            return
+        }
+        if (bundle.paper.result != null || bundle.questions.isEmpty()) {
+            prefs.edit().remove("mock_paper_id").apply()
+            return
+        }
+        startMock(bundle)
+        toast("已恢复上次未交卷的模考")
     }
 
     fun mockPick(i: Int) {
@@ -460,6 +484,7 @@ class AppState(context: Context) {
         mockResult = result
         loadWrong()
         mockPaper = null
+        prefs.edit().remove("mock_paper_id").apply()
         onDone()
     }
 

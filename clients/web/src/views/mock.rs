@@ -75,6 +75,8 @@ pub fn start_mock(state: AppState) {
                     st.toast("所选题目组卷失败，请重新选择");
                     return;
                 }
+                // P2-12：记录未交卷试卷 id，页面刷新后经 GET /papers/:id 恢复会话。
+                crate::state::ls_set(crate::state::LS_MOCK_PAPER, &bundle.paper.id.to_string());
                 let session = MockSession {
                     paper_id: bundle.paper.id,
                     name,
@@ -159,6 +161,7 @@ pub fn ask_exit_mock(state: AppState) {
 
 fn exit_mock(state: AppState) {
     stop_timer();
+    crate::state::ls_remove(crate::state::LS_MOCK_PAPER);
     state.mock.set(None);
     crate::views::shell::switch_view(state, View::Assembly);
 }
@@ -207,12 +210,61 @@ pub fn submit_mock(state: AppState) {
                 }));
                 st.mock.set(None);
                 st.paper_name.set(String::new());
+                crate::state::ls_remove(crate::state::LS_MOCK_PAPER);
                 refresh_wrong(st).await;
             }
             Err(e) => st.toast(&format!("交卷失败：{}", e)),
         }
         SUBMITTING.with(|f| f.set(false));
     });
+}
+
+/// P2-12：页面刷新后恢复未交卷的模考。读取 localStorage 中的试卷 id，
+/// 经 GET /papers/:id 读回试卷重建会话（作答清空、计时重新开始）；
+/// 已交卷（result 存在）、试卷为空或读取失败时清除恢复标记。
+pub async fn restore_mock(state: AppState) {
+    let Some(paper_id) =
+        crate::state::ls_get(crate::state::LS_MOCK_PAPER).and_then(|s| s.parse::<i64>().ok())
+    else {
+        return;
+    };
+    if state.workspace.get_untracked().is_none() {
+        crate::state::ls_remove(crate::state::LS_MOCK_PAPER);
+        return;
+    }
+    match api::read_paper(paper_id).await {
+        Ok(bundle) => {
+            let n = bundle.questions.len();
+            if bundle.paper.result.is_some() || n == 0 {
+                crate::state::ls_remove(crate::state::LS_MOCK_PAPER);
+                return;
+            }
+            let name = bundle
+                .paper
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("模拟卷 #{}", paper_id));
+            let session = MockSession {
+                paper_id: bundle.paper.id,
+                name,
+                questions: bundle.questions,
+                answers: vec![None; n],
+                idx: 0,
+                marked: HashSet::new(),
+                start_ms: window().performance().map(|p| p.now()).unwrap_or(0.0),
+                remaining: mock_duration_secs(n as u32),
+            };
+            state.mock.set(Some(session));
+            state.mock_result.set(None);
+            state.view.set(View::Mock);
+            if let Some(el) = document().get_element_by_id("content-area") {
+                el.set_scroll_top(0);
+            }
+            start_timer(state);
+            state.toast("已恢复上次未交卷的模考");
+        }
+        Err(_) => crate::state::ls_remove(crate::state::LS_MOCK_PAPER),
+    }
 }
 
 /// 交卷确认：有未答题时弹确认框，否则直接交卷。

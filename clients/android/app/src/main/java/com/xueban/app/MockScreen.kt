@@ -71,7 +71,7 @@ fun MockScreen(state: AppState, onFinish: () -> Unit) {
                     .clip(RoundedCornerShape(999.dp))
                     .background(Xb.surface2)
                     .clickable {
-                        state.mockPaper = null
+                        state.exitMock()
                         state.toast("已退出模考（进度不保留 · 演示）")
                     }
                     .padding(horizontal = 12.dp, vertical = 6.dp),

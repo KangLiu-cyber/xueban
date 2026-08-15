@@ -380,6 +380,7 @@ pub fn Shell() -> impl IntoView {
 
         spawn_local(async move {
             init_data(state).await;
+            crate::views::mock::restore_mock(state).await;
         });
     });
 

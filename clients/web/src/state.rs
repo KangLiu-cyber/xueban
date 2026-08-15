@@ -20,6 +20,8 @@ pub const LS_WORKSPACE: &str = "xb_workspace";
 pub const LS_STARS: &str = "xb_stars";
 pub const LS_LEARNED: &str = "xb_learned";
 pub const LS_PAPER_SEQ: &str = "xb_paper_seq";
+/// 未交卷的模考试卷 id：页面刷新后经 GET /papers/:id 恢复会话。
+pub const LS_MOCK_PAPER: &str = "xb_mock_paper";
 
 pub fn ls_get(key: &str) -> Option<String> {
     LocalStorage::get(key).ok()

@@ -142,7 +142,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 1. 领域层：`Question` 实体提供 `judge(chosen) -> Judgment` 纯函数；`WrongItem` 聚合定义不变式——答错则 `times += 1` 且 `mastered = false`，重做答对不自动清除错题（由用户显式标记掌握）。
 2. 应用层：`SubmitAnswer` 用例依赖 `QuestionRepository`、`QuizRecordRepository`、`WrongItemRepository`、`EventStore` 四个 trait，编排"取题 → 判定 → 记错题 → 追加事件"。
 3. 被驱动适配器：`adapter-postgres` 用 SQLx 实现上述 trait。
-4. 驱动适配器：REST 的 `POST /api/quiz/answer` 把请求体映射为用例入参。若未来 Agent 也要判题，MCP 适配器调用同一个用例即可，规则零重复。
+4. 驱动适配器：REST 的 `POST /api/v1/quiz/answer` 把请求体映射为用例入参。若未来 Agent 也要判题，MCP 适配器调用同一个用例即可，规则零重复。
 
 ### 5.4 工程结构
 
@@ -336,26 +336,26 @@ events (
 
 | 分组 | 接口 | 对应用例 |
 |:---|:---|:---|
-| 认证 | `POST /api/auth/register` | Register |
-| 认证 | `POST /api/auth/login` | Login |
-| 认证 | `POST /api/auth/logout` | Logout |
-| 空间 | `GET /api/workspaces` | BrowseTree（空间列表） |
-| 空间 | `POST /api/workspaces` | ManageExamGoal（创建空间） |
-| 空间 | `PUT /api/workspaces/:id` | ManageExamGoal（更新目标/日期） |
-| 内容 | `GET /api/workspaces/:id/tree` | BrowseTree |
-| 内容 | `GET /api/items/:id` | ReadNote |
-| 批注 | `POST /api/items/:id/annotations` | Annotate |
-| 批注 | `DELETE /api/annotations/:id` | Annotate（删除） |
-| 刷题 | `GET /api/quiz/questions?scope=` | DrawQuestions |
-| 刷题 | `POST /api/quiz/answer` | SubmitAnswer |
-| 错题 | `GET /api/wrong` | ListWrong |
-| 错题 | `GET /api/wrong/stats` | WrongStats（累计/近 7 天新增/已掌握，错题本统计卡片） |
-| 错题 | `POST /api/wrong/:id/master` | MarkMastered |
-| 组卷 | `POST /api/papers` | AssemblePaper |
-| 组卷 | `GET /api/papers/:id` | ReadPaper |
-| 组卷 | `POST /api/papers/:id/submit` | SubmitPaper |
-| Agent | `GET /api/agent/credential` | 读取接入凭证文案 |
-| Agent | `POST /api/agent/credential/rotate` | 换发 token |
+| 认证 | `POST /api/v1/auth/register` | Register |
+| 认证 | `POST /api/v1/auth/login` | Login |
+| 认证 | `POST /api/v1/auth/logout` | Logout |
+| 空间 | `GET /api/v1/workspaces` | BrowseTree（空间列表） |
+| 空间 | `POST /api/v1/workspaces` | ManageExamGoal（创建空间） |
+| 空间 | `PUT /api/v1/workspaces/:id` | ManageExamGoal（更新目标/日期） |
+| 内容 | `GET /api/v1/workspaces/:id/tree` | BrowseTree |
+| 内容 | `GET /api/v1/items/:id` | ReadNote |
+| 批注 | `POST /api/v1/items/:id/annotations` | Annotate |
+| 批注 | `DELETE /api/v1/annotations/:id` | Annotate（删除） |
+| 刷题 | `GET /api/v1/quiz/questions?scope=` | DrawQuestions |
+| 刷题 | `POST /api/v1/quiz/answer` | SubmitAnswer |
+| 错题 | `GET /api/v1/wrong` | ListWrong |
+| 错题 | `GET /api/v1/wrong/stats` | WrongStats（累计/近 7 天新增/已掌握，错题本统计卡片） |
+| 错题 | `POST /api/v1/wrong/:id/master` | MarkMastered |
+| 组卷 | `POST /api/v1/papers` | AssemblePaper |
+| 组卷 | `GET /api/v1/papers/:id` | ReadPaper |
+| 组卷 | `POST /api/v1/papers/:id/submit` | SubmitPaper |
+| Agent | `GET /api/v1/agent/credential` | 读取接入凭证文案 |
+| Agent | `POST /api/v1/agent/credential/rotate` | 换发 token |
 
 作答与答案的 JSON 格式约定（`questions.answer`、`quiz_records.chosen`、REST 请求/响应共用）：
 

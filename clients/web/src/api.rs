@@ -492,6 +492,10 @@ pub async fn assemble_paper(req: &AssembleRequest) -> ApiResult<PaperBundle> {
     post_json("/papers", &serde_json::to_string(req).unwrap_or_default()).await
 }
 
+pub async fn read_paper(paper_id: i64) -> ApiResult<PaperBundle> {
+    get_json(&format!("/papers/{}", paper_id)).await
+}
+
 pub async fn submit_paper(paper_id: i64, req: &SubmitRequest) -> ApiResult<PaperResult> {
     post_json(
         &format!("/papers/{}/submit", paper_id),
