@@ -1,10 +1,16 @@
 //! 刷题视图：练习范围（跨集综合练 / 单集 / 只练错题）下拉切换、进度条、
 //! 即时判分与解析展示、⭐ 标记重点、下一题回绕。
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+
+// P2-8：同一题防重复提交——作答请求在途时忽略该题的下一次点击。
+thread_local! {
+    static SUBMITTING_QS: RefCell<HashSet<i64>> = RefCell::new(HashSet::new());
+}
 
 use crate::api::{
     self, AnswerRequest, BTreeSetUsize, Chosen, DrawQuery, QuestionBrief, QuestionType,
@@ -84,16 +90,20 @@ fn scope_string(state: AppState, scope: QuizScope) -> Option<String> {
 
 fn submit_answer(state: AppState, idx: usize, q: &QuestionBrief, chosen: Chosen) {
     let qid = q.id;
+    if !SUBMITTING_QS.with(|s| s.borrow_mut().insert(qid)) {
+        return;
+    }
     let scope = scope_string(state, state.quiz_scope.get_untracked());
     let st = state;
     spawn_local(async move {
-        match api::answer(&AnswerRequest {
+        let result = api::answer(&AnswerRequest {
             question_id: qid,
             chosen: chosen.clone(),
             scope,
         })
-        .await
-        {
+        .await;
+        SUBMITTING_QS.with(|s| s.borrow_mut().remove(&qid));
+        match result {
             Ok(out) => {
                 let mut chosen_vec = st.quiz_chosen.get_untracked();
                 chosen_vec[idx] = Some(chosen);

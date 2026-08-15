@@ -2,12 +2,20 @@
 //! 单题重做与全部重刷。重做弹窗 UI 在 modals.rs 渲染，本文件提供状态流转
 //! 与作答逻辑（redo_* 供弹窗调用）。
 
+use std::cell::RefCell;
+use std::collections::HashSet;
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::{self, AnswerRequest, BTreeSetUsize, Chosen, QuestionType, WrongListItem};
 use crate::state::{episode_map, fmt_date_ymd, AppState, RedoState, WrongFilter};
 use crate::views::ui::judge_chosen;
+
+// P2-8：同一题防重复提交——重做请求在途时忽略该题的再次作答。
+thread_local! {
+    static REDOING_QS: RefCell<HashSet<i64>> = RefCell::new(HashSet::new());
+}
 
 /// 拉取错题列表与统计，更新徽标（刷题 / 模考 / 重做后调用）。
 pub async fn refresh_wrong(state: AppState) {
@@ -150,15 +158,19 @@ fn redo_submit(state: AppState, chosen: Chosen) {
         return;
     };
     let qid = item.question.id;
+    if !REDOING_QS.with(|s| s.borrow_mut().insert(qid)) {
+        return;
+    }
     let st = state;
     spawn_local(async move {
-        match api::answer(&AnswerRequest {
+        let result = api::answer(&AnswerRequest {
             question_id: qid,
             chosen: chosen.clone(),
             scope: Some("错题本".to_string()),
         })
-        .await
-        {
+        .await;
+        REDOING_QS.with(|s| s.borrow_mut().remove(&qid));
+        match result {
             Ok(out) => {
                 let mut sts = st.redo_state.get_untracked();
                 if let Some(s) = sts.get_mut(idx) {

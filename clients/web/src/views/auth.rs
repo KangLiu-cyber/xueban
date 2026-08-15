@@ -237,8 +237,9 @@ pub fn AuthPage() -> impl IntoView {
                                         on:input=move |ev| date.set(event_target_value(&ev)) />
                                 </div>
                                 <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;margin-top:6px;"
+                                    disabled=move || busy.get()
                                     on:click=confirm_setup>
-                                    "确认并进入系统"
+                                    {move || if busy.get() { "创建中…" } else { "确认并进入系统" }}
                                 </button>
                                 <div class="auth-agree">
                                     "进入后将：创建备考空间 · 开启考试倒计时 · 弹出 Agent 接入凭证"
@@ -276,8 +277,9 @@ pub fn AuthPage() -> impl IntoView {
                                                 on:input=move |ev| reg_password2.set(event_target_value(&ev)) />
                                         </div>
                                         <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;margin-top:6px;"
+                                            disabled=move || busy.get()
                                             on:click=do_register>
-                                            "注 册"
+                                            {move || if busy.get() { "注册中…" } else { "注 册" }}
                                         </button>
                                     </div>
                                 }
@@ -296,8 +298,9 @@ pub fn AuthPage() -> impl IntoView {
                                             on:input=move |ev| password.set(event_target_value(&ev)) />
                                     </div>
                                     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px 0;margin-top:6px;"
+                                        disabled=move || busy.get()
                                         on:click=do_login>
-                                        "登 录"
+                                        {move || if busy.get() { "登录中…" } else { "登 录" }}
                                     </button>
                                 </div>
                             </Show>

@@ -23,6 +23,8 @@ use crate::views::wrong::refresh_wrong;
 thread_local! {
     static MOCK_TIMER: RefCell<Option<Interval>> = const { RefCell::new(None) };
     static SUBMITTING: Cell<bool> = const { Cell::new(false) };
+    // P2-8：组卷请求在途时防重复触发。
+    static ASSEMBLING: Cell<bool> = const { Cell::new(false) };
 }
 
 /// 🚀 开始模考：组卷接口按已选题目出卷 → 建会话 → 切到模考视图并启动倒计时。
@@ -56,6 +58,11 @@ pub fn start_mock(state: AppState) {
         .into_iter()
         .collect();
     let count = picked.len() as u32;
+    // P2-8：组卷在途防重入——确认弹窗关闭后快速连点不会重复请求。
+    if ASSEMBLING.with(|f| f.replace(true)) {
+        return;
+    }
+    state.toast("正在组卷…");
     let st = state;
     spawn_local(async move {
         let req = AssembleRequest {
@@ -73,6 +80,7 @@ pub fn start_mock(state: AppState) {
                 let n = bundle.questions.len();
                 if n == 0 {
                     st.toast("所选题目组卷失败，请重新选择");
+                    ASSEMBLING.with(|f| f.set(false));
                     return;
                 }
                 // P2-12：记录未交卷试卷 id，页面刷新后经 GET /papers/:id 恢复会话。
@@ -95,8 +103,12 @@ pub fn start_mock(state: AppState) {
                     el.set_scroll_top(0);
                 }
                 start_timer(st);
+                ASSEMBLING.with(|f| f.set(false));
             }
-            Err(e) => st.toast(&format!("组卷失败：{}", e)),
+            Err(e) => {
+                st.toast(&format!("组卷失败：{}", e));
+                ASSEMBLING.with(|f| f.set(false));
+            }
         }
     });
 }

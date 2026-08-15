@@ -169,6 +169,8 @@ body {
 .btn-ghost { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
 .btn-ghost:hover { border-color: var(--accent); color: var(--accent-deep); }
 .btn-sm { padding: 5px 12px; font-size: 12.5px; }
+/* P2-8：加载中按钮禁用态（pointer-events 连带取消 hover 效果） */
+.btn:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
 
 .content-area { flex: 1; overflow-y: auto; }
 

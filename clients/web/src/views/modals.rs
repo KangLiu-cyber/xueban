@@ -114,10 +114,16 @@ pub fn Modals(state: AppState) -> impl IntoView {
                 .unwrap_or_default(),
         );
     });
+    // P2-8：保存中防重入 + 按钮 loading。
+    let setup_busy = RwSignal::new(false);
+    let del_busy = RwSignal::new(false);
     let save_setup = move |_| {
         let g = setup_goal.get_untracked().trim().to_string();
         if g.is_empty() {
             state.toast("请手写填写你的考试目标");
+            return;
+        }
+        if setup_busy.get_untracked() {
             return;
         }
         let d = setup_date.get_untracked();
@@ -131,6 +137,7 @@ pub fn Modals(state: AppState) -> impl IntoView {
             exam_goal: g,
             exam_date,
         };
+        setup_busy.set(true);
         let st = state;
         spawn_local(async move {
             match st.workspace.get_untracked() {
@@ -162,6 +169,7 @@ pub fn Modals(state: AppState) -> impl IntoView {
                     Err(e) => st.toast(&format!("创建失败：{}", e)),
                 },
             }
+            setup_busy.set(false);
         });
     };
 
@@ -677,7 +685,11 @@ pub fn Modals(state: AppState) -> impl IntoView {
                         </div>
                         <div class="modal-foot">
                             <button class="btn btn-ghost" on:click=move |_| state.setup_open.set(false)>"取消"</button>
-                            <button class="btn btn-primary" on:click=save_setup>"保存设置"</button>
+                            <button class="btn btn-primary"
+                                disabled=move || setup_busy.get()
+                                on:click=save_setup>
+                                {move || if setup_busy.get() { "保存中…" } else { "保存设置" }}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -813,7 +825,12 @@ pub fn Modals(state: AppState) -> impl IntoView {
                                     let anno_id = d.anno_id;
                                     (view! {
                                         <button class="btn btn-ghost"
+                                            disabled=move || del_busy.get()
                                             on:click=move |_| {
+                                                if del_busy.get_untracked() {
+                                                    return;
+                                                }
+                                                del_busy.set(true);
                                                 let st = state;
                                                 spawn_local(async move {
                                                     match api::delete_annotation(anno_id).await {
@@ -826,6 +843,7 @@ pub fn Modals(state: AppState) -> impl IntoView {
                                                         }
                                                         Err(e) => st.toast(&format!("删除失败：{}", e)),
                                                     }
+                                                    del_busy.set(false);
                                                 });
                                             }>
                                             "🗑 删除批注"
