@@ -169,7 +169,16 @@ pub fn router(state: AppState) -> Router {
             middleware::rate_limit_by_token,
         ));
 
+    let cors = tower_http::cors::CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+        ]);
+
     Router::new()
         .nest("/api/v1", public.merge(protected))
+        .layer(cors)
         .with_state(state)
 }
