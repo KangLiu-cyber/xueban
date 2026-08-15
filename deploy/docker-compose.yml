@@ -1,5 +1,6 @@
-# 单机部署编排（docs/architecture.md §11）：只编排 postgres + backend 两个服务。
-# 镜像不做编译——先跑 scripts/build-musl.sh 产出 musl 静态二进制，再 build 本编排。
+# 单机部署编排（docs/architecture.md §11）：只编排 postgres + server 两个服务。
+# 镜像不做编译——先跑 scripts/build-musl.sh 产出 musl 静态二进制，再 build 本编排
+# （镜像仅启动验证/运行）；skills/ 目录只读挂载进 server，宿主直接编辑 skills/ 即更新。
 #
 # 用法：
 #   docker compose -f deploy/docker-compose.yml up -d --build
@@ -30,6 +31,8 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-xueban}:${POSTGRES_PASSWORD:-xueban-dev-password}@postgres:5432/${POSTGRES_DB:-xueban}
       BIND_ADDR: 0.0.0.0:8080
       MCP_ENDPOINT: ${MCP_ENDPOINT:-http://127.0.0.1:8080/mcp}
+    volumes:
+      - ../skills:/app/skills:ro
     ports:
       - "8080:8080"
     depends_on:
