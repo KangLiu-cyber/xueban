@@ -11,6 +11,8 @@ name: CI
 on:
   push:
     branches: [master, main]
+    # 固定版本 tag（v*）也触发：release job 以 tag 为门槛，推 v0.1.0 即发布
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -65,8 +67,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: 构建 APK（debug 可安装验证）
-        run: ./gradlew :app:assembleDebug -q
+      - name: 构建 APK（debug 可安装验证，端点指向生产域名）
+        run: ./gradlew :app:assembleDebug -PapiBaseUrl=https://buildstore.mjcode.top/api/v1 -q
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
@@ -86,10 +88,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: 安装 trunk
         run: cargo install trunk --locked
-      - name: 编译桌面端安装包（tauri 自动先 trunk build 前端）
+      - name: 编译桌面端安装包（tauri 自动先 trunk build 前端，端点指向生产域名）
         run: |
           rustup target add wasm32-unknown-unknown
-          cd clients/desktop && cargo tauri build --release
+          cd clients/desktop && XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build --release
       - name: 上传安装包
         uses: actions/upload-artifact@v4
         with:
