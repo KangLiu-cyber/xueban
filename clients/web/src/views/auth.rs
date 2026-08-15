@@ -93,8 +93,8 @@ pub fn AuthPage() -> impl IntoView {
             state.toast("请输入账号");
             return;
         }
-        if p1.len() < 6 {
-            state.toast("密码至少 6 位");
+        if p1.len() < 8 {
+            state.toast("密码至少 8 位");
             return;
         }
         if p1 != p2 {
@@ -261,7 +261,7 @@ pub fn AuthPage() -> impl IntoView {
                                         </div>
                                         <div class="form-row">
                                             <label class="form-label">密码</label>
-                                            <input class="form-input" type="password" placeholder="至少 6 位"
+                                            <input class="form-input" type="password" placeholder="至少 8 位"
                                                 prop:value=move || reg_password.get()
                                                 on:input=move |ev| reg_password.set(event_target_value(&ev)) />
                                         </div>

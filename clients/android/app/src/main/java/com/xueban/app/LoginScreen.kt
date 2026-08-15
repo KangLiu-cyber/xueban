@@ -152,8 +152,8 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                         FormRow("账号") {
                             FormInput(regAccount, { regAccount = it }, placeholder = "请输入账号")
                         }
-                        FormRow("密码（至少 6 位）") {
-                            FormInput(regPassword, { regPassword = it }, placeholder = "请输入密码（至少 6 位）", password = true)
+                        FormRow("密码（至少 8 位）") {
+                            FormInput(regPassword, { regPassword = it }, placeholder = "请输入密码（至少 8 位）", password = true)
                         }
                         FormRow("确认密码") {
                             FormInput(regPassword2, { regPassword2 = it }, placeholder = "请再次输入密码", password = true)
@@ -161,7 +161,7 @@ fun LoginScreen(state: AppState, onEntered: () -> Unit) {
                         XbButton("注 册", onClick = {
                             when {
                                 regAccount.isBlank() -> state.toast("请输入账号")
-                                regPassword.length < 6 -> state.toast("密码至少 6 位")
+                                regPassword.length < 8 -> state.toast("密码至少 8 位")
                                 regPassword != regPassword2 -> state.toast("两次输入的密码不一致")
                                 else -> {
                                     if (state.register(regAccount, regPassword)) {
