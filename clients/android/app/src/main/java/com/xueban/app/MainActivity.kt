@@ -64,8 +64,8 @@ fun XueBanApp() {
         if (state.toastMsg == msg) state.toastMsg = null
     }
 
-    // edge-to-edge 下正文整体下移，避开状态栏时间与摄像头挖孔。
-    Box(Modifier.fillMaxSize().statusBarsPadding().background(Xb.bg)) {
+    // edge-to-edge 下正文整体下移避开状态栏与挖孔；背景先画铺满全屏，再对内容应用 inset padding。
+    Box(Modifier.fillMaxSize().background(Xb.bg).statusBarsPadding()) {
         if (!state.loggedIn) {
             LoginScreen(state, onEntered = {})
         } else {
