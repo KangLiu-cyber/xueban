@@ -1,0 +1,10 @@
+# Caddy 反向代理（docs/architecture.md §11）：域名 TLS（自动证书）→ app。
+# DOMAIN 由 compose 注入（默认 localhost，仅 HTTP 可用）。
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	reverse_proxy /healthz app:8080
+	reverse_proxy /api/v1/* app:8080
+	reverse_proxy /mcp app:8080
+	reverse_proxy /mcp/* app:8080
+}

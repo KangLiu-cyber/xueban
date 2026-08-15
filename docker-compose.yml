@@ -1,0 +1,96 @@
+# 单机一键部署编排（docs/architecture.md §11）：
+#   Caddy（TLS 反代）→ app（Rust 单进程）→ PostgreSQL 16
+#   backup sidecar 每日 pg_dump → 对象存储（保留 30 天，§11）
+#
+# 用法：
+#   DOMAIN=study.example.com S3_ENDPOINT=... S3_BUCKET=... \
+#   S3_ACCESS_KEY=... S3_SECRET_KEY=... docker compose up -d
+#
+# DOMAIN 为空时 Caddy 走 localhost（HTTP）；S3_* 未配置时备份仅留本地卷。
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-xueban}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xueban-dev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-xueban}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-xueban}:${POSTGRES_PASSWORD:-xueban-dev-password}@postgres:5432/${POSTGRES_DB:-xueban}
+      BIND_ADDR: 0.0.0.0:8080
+      MCP_ENDPOINT: ${MCP_ENDPOINT:-https://${DOMAIN:-localhost}/mcp}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-xueban}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-xueban-dev-password}
+      PGDATABASE: ${POSTGRES_DB:-xueban}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./scripts/backup.sh:/usr/local/bin/xueban-backup:ro
+      - backupdata:/backups
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        while true; do
+          /usr/local/bin/xueban-backup || echo "[backup] 本次备份失败，24 小时后重试"
+          sleep 86400
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+  backupdata:
