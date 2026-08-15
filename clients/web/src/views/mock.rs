@@ -41,8 +41,21 @@ pub fn start_mock(state: AppState) {
             n
         }
     };
-    let ids: Vec<i64> = state.selected.get_untracked().into_iter().collect();
-    let count = ids.len() as u32;
+    let sel = state.selected.get_untracked();
+    let pool = state.pool.get_untracked();
+    let picked: Vec<&QuestionBrief> = pool.iter().filter(|q| sel.contains(&q.id)).collect();
+    if picked.is_empty() {
+        state.toast("请先选择题目或使用「自动补齐」");
+        return;
+    }
+    // P0-4：后端 source_item_ids 是「集/笔记 item id」，从已选题目反查来源集去重
+    let source_ids: Vec<i64> = picked
+        .iter()
+        .map(|q| q.source_item_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let count = picked.len() as u32;
     let st = state;
     spawn_local(async move {
         let req = AssembleRequest {
@@ -51,7 +64,7 @@ pub fn start_mock(state: AppState) {
             config: PaperConfig {
                 scope: None,
                 question_types: None,
-                source_item_ids: Some(ids),
+                source_item_ids: Some(source_ids),
                 count,
             },
         };
