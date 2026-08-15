@@ -42,6 +42,12 @@ pub fn AuthPage() -> impl IntoView {
                     } else if let Some(u) = pending_user.get_untracked() {
                         st.user.set(Some(u));
                         st.entered.set(true);
+                        // P2-2：老用户登录后同样自动弹出 Agent 接入凭证。
+                        let st2 = st;
+                        let w = gloo_timers::callback::Timeout::new(700, move || {
+                            st2.agent_open.set(true);
+                        });
+                        w.forget();
                     }
                 }
                 Err(e) => {
@@ -114,11 +120,9 @@ pub fn AuthPage() -> impl IntoView {
             })
             .await
             {
+                // P2-1：注册成功即自动登录，经 after_auth 进入创建备考空间第二步。
                 Ok(resp) => {
-                    st.toast("注册成功，请登录");
-                    account.set(acc);
-                    password.set(String::new());
-                    tab.set(AuthTab::Login);
+                    st.toast("注册成功");
                     after_auth(st, resp.token, resp.user);
                 }
                 Err(e) => st.toast(&e.to_string()),

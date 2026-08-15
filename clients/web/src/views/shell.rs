@@ -1,6 +1,7 @@
 //! 应用外壳：初始化数据加载 / 全局事件 / Sidebar / Topbar / 视图切换与常驻视图。
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use leptos::prelude::*;
 use wasm_bindgen::prelude::Closure;
@@ -9,7 +10,7 @@ use wasm_bindgen::JsCast;
 use leptos::task::spawn_local;
 
 use crate::api::{self, DrawQuery, ItemKind, ItemNode};
-use crate::state::{self, episode_map, AppState, View};
+use crate::state::{self, episode_map, AppState, ConfirmSpec, View};
 use crate::views::ui::{close_all_dd, fire_view_switch_hooks};
 use crate::views::wrong::refresh_wrong;
 
@@ -241,13 +242,22 @@ fn Sidebar(state: AppState, user_menu: RwSignal<bool>) -> impl IntoView {
         let tree = state.tree.get();
         tree_rows(state, &tree, &map)
     };
+    // P2-4：退出登录先弹确认框，确认后才调 logout。
     let do_logout = move |_| {
         let st = state;
-        spawn_local(async move {
-            let _ = api::logout().await;
-            st.clear_auth();
-            st.toast("已退出登录");
-        });
+        st.confirm.set(Some(ConfirmSpec {
+            title: "退出登录".to_string(),
+            text_html: "确定要退出登录吗？<br>退出后需重新登录才能继续使用。".to_string(),
+            ok_label: "退出登录".to_string(),
+            on_ok: Arc::new(move || {
+                let st = st;
+                spawn_local(async move {
+                    let _ = api::logout().await;
+                    st.clear_auth();
+                    st.toast("已退出登录");
+                });
+            }),
+        }));
     };
 
     view! {
@@ -296,14 +306,27 @@ fn Sidebar(state: AppState, user_menu: RwSignal<bool>) -> impl IntoView {
                 <div class="user-name">{user_name}</div>
                 <div class="user-plan">"账号 · 接入设置 ⌄"</div>
             </div>
+            // P2-3：条目点击 stopPropagation，避免冒泡到 sidebar-footer 把菜单又切回打开。
             <div class="user-menu" class:show=move || user_menu.get()>
-                <div class="user-menu-item" on:click=move |_| { user_menu.set(false); state.agent_open.set(true); }>
+                <div class="user-menu-item" on:click=move |ev| {
+                    ev.stop_propagation();
+                    user_menu.set(false);
+                    state.agent_open.set(true);
+                }>
                     "🔌 Agent 接入凭证"
                 </div>
-                <div class="user-menu-item" on:click=move |_| { user_menu.set(false); state.setup_open.set(true); }>
+                <div class="user-menu-item" on:click=move |ev| {
+                    ev.stop_propagation();
+                    user_menu.set(false);
+                    state.setup_open.set(true);
+                }>
                     "🎯 考试目标设置"
                 </div>
-                <div class="user-menu-item danger" on:click=do_logout>
+                <div class="user-menu-item danger" on:click=move |ev| {
+                    ev.stop_propagation();
+                    user_menu.set(false);
+                    do_logout(ev);
+                }>
                     "👋 退出登录"
                 </div>
             </div>
