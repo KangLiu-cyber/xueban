@@ -1,5 +1,0 @@
-# 备份 sidecar：postgres 客户端（pg_dump）+ curl/openssl（S3 兼容对象存储上传，§11）。
-FROM postgres:16
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl openssl \
-    && rm -rf /var/lib/apt/lists/*

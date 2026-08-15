@@ -1,8 +1,8 @@
-//! 系统内置 Skill 目录：开发者维护的 skill 安装包（名称 + 介绍 + 脚本内容）。
+//! 系统内置 Skill 目录：开发者维护的 skill 资产（名称 + 介绍 + 脚本内容）。
 //!
-//! skill 文件放在仓库根 `skills/` 文件夹（一个 `.md` 文件一个 skill），后端启动时
-//! 加载为 Skill 目录。Agent 首次接入时 bootstrap 全量下发（自动下载安装），
-//! 之后可按名经 get_skill 重新拉取。
+//! skill 放在仓库根 `skills/` 文件夹（一个子文件夹一个 skill，内含 `skill.md`），
+//! 后端启动时加载为 Skill 目录，直接编辑文件即可更新。Agent 首次接入时
+//! bootstrap 全量下发（自动下载安装），之后可按名经 get_skill 重新拉取。
 
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ pub struct Skill {
     pub script: Option<String>,
 }
 
-/// 解析单个 skill 文件（`<名>.md`）。
+/// 解析单个 skill 文件（`skill.md`）。
 ///
 /// 可选 frontmatter（首行 `---` 至下一个 `---` 行，单行 `key: value` 字段：
 /// `name` / `description`）；frontmatter 之后的正文即脚本。name 缺省取文件名主干，

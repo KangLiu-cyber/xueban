@@ -154,7 +154,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── identity.rs      # User、Token、密码与凭证规则
 │   │       ├── space.rs         # Workspace、Item 树、Annotation
 │   │       ├── practice.rs      # Question、WrongItem、Paper、抽题/判分领域服务
-│   │       ├── skill.rs         # Skill（内置目录解析 skills/*.md）
+│   │       ├── skill.rs         # Skill（内置目录解析 skills/*/skill.md）
 │   │       ├── event.rs         # Event、领域事件定义
 │   │       └── ports.rs         # 仓储端口 traits（输出端口）
 │   ├── application/             # 应用层：用例编排
@@ -396,7 +396,7 @@ MCP 适配器的强制规则：
 - 每个请求先校验 token，解析出 user_id 注入用例上下文。
 - Agent 写入全部记入 events（action = agent_write），客户端可展示"由 AI 生成"的来源标注。
 - 单 token 限流（默认 60 次/分钟），防止异常 Agent 打满服务。
-- 能力包（Skill + 提示词 + 工具清单 + 内置 Skill 目录）按版本管理，服务端升级后 Agent 下次接入自动获取新版本，无需用户重新复制凭证。内置 Skill 目录为全局共享资产：开发者把 skill 安装包（一个 `.md` 文件一个 skill，含名称、介绍与脚本）放进仓库根 `skills/` 文件夹，后端启动时自动加载解析（见 §5.4 `domain/src/skill.rs`）。`bootstrap` 全量下发全部 skill（含脚本），Agent 首次接入即自动下载安装；之后按名调 `get_skill` 重新拉取（更新/修复安装）。所有用户接入拿到同一份清单，无用户维度区分。
+- 能力包（Skill + 提示词 + 工具清单 + 内置 Skill 目录）按版本管理，服务端升级后 Agent 下次接入自动获取新版本，无需用户重新复制凭证。内置 Skill 目录为全局共享资产：开发者把 skill（一个子文件夹一个 skill，内含 `skill.md`，含名称、介绍与脚本）放进仓库根 `skills/` 文件夹，后端启动时自动加载解析（见 §5.4 `domain/src/skill.rs`）；直接编辑文件夹内文件即可更新。`bootstrap` 全量下发全部 skill（含脚本），Agent 首次接入即自动下载安装；之后按名调 `get_skill` 重新拉取（更新/修复安装）。所有用户接入拿到同一份清单，无用户维度区分。
 
 ## 九、核心流程
 
