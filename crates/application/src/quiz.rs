@@ -174,7 +174,8 @@ where
             })
             .await?;
         if !judgment.is_correct {
-            self.wrongs
+            let item = self
+                .wrongs
                 .record_mistake(user_id, question_id, now)
                 .await?;
             self.events
@@ -185,8 +186,11 @@ where
                     item_id: Some(question.source_item_id),
                     action: EventAction::Wrong,
                     payload: Some(
-                        serde_json::json!({ "question_id": question_id, "times_after": 0 })
-                            .to_string(),
+                        serde_json::json!({
+                            "question_id": question_id,
+                            "times_after": item.times,
+                        })
+                        .to_string(),
                     ),
                     created_at: now,
                 })
@@ -345,6 +349,17 @@ mod tests {
             .filter(|e| e.action == EventAction::Wrong)
             .collect();
         assert_eq!(wrongs.len(), 2);
+        // wrong 事件 payload 携带真实累计次数（时间升序：1 次后 2 次后）。
+        let times: Vec<i64> = wrongs
+            .iter()
+            .map(|e| {
+                serde_json::from_str::<serde_json::Value>(e.payload.as_deref().unwrap()).unwrap()
+                    ["times_after"]
+                    .as_i64()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(times, vec![1, 2]);
     }
 
     #[tokio::test]
