@@ -9,7 +9,9 @@ use chrono::{NaiveDate, Utc};
 use domain::error::{Error, Result};
 use domain::event::{Event, EventAction};
 use domain::ports::{AnnotationRepository, EventStore, ItemRepository, WorkspaceRepository};
-use domain::space::{Annotation, AnnotationAuthor, Creator, Item, ItemKind, ItemNode, Workspace};
+use domain::space::{
+    Annotation, AnnotationAuthor, Creator, Item, ItemKind, ItemNode, Workspace, assert_no_cycle,
+};
 use serde::Serialize;
 
 /// 单 item 正文上限：512KB（架构文档 §10 输入校验）。
@@ -187,6 +189,10 @@ where
             if !parent_item.is_dir() {
                 return Err(Error::Invalid("父节点必须是目录".to_owned()));
             }
+            // 防环不变式挂在写入口：新建节点 id 尚未分配，以占位 0 调用
+            //（0 永不与真实节点冲突），健康树上必然通过；树若损坏则在此终止。
+            let chain = self.items.ancestors(parent, user_id).await?;
+            assert_no_cycle(Some(parent), 0, &chain)?;
         }
         if let Some(content) = &content {
             Self::check_content_size(content)?;
@@ -475,6 +481,48 @@ mod tests {
             .await
             .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn create_item_terminates_on_corrupted_cycle_tree() {
+        let s = svc();
+        let ws = s
+            .create_workspace(1, "备考".into(), "目标".into(), None)
+            .await
+            .unwrap();
+        // 直接经仓储构造损坏树 A↔B（互相为父）——应用层不产生此状态，仅测试守卫。
+        let make = |parent_id, name: &str| Item {
+            id: 0,
+            workspace_id: ws.id,
+            parent_id,
+            kind: ItemKind::Dir,
+            name: name.into(),
+            content: None,
+            created_by: Creator::User,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let a = s.items.insert(&make(None, "A")).await.unwrap();
+        let b = s.items.insert(&make(Some(a), "B")).await.unwrap();
+        let mut a_item = make(Some(b), "A");
+        a_item.id = a;
+        s.items.update(&a_item, 1).await.unwrap();
+
+        // 在损坏环节点下创建：占位 0 永不构成环，创建成功；ancestors 的
+        // visited 守卫保证遍历终止（无该守卫则此处无限循环挂起）。
+        let created = s
+            .create_item(
+                1,
+                ws.id,
+                Some(a),
+                ItemKind::Note,
+                "C".into(),
+                Some("x".into()),
+            )
+            .await
+            .expect("损坏树上创建不应失败");
+        assert_eq!(created.name, "C");
+        assert!(created.id > 0);
     }
 
     #[tokio::test]

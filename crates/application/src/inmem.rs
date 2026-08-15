@@ -180,10 +180,20 @@ impl WorkspaceRepository for InMemoryWorkspaceRepository {
     }
 }
 
-#[derive(Default)]
 pub struct InMemoryItemRepository {
     items: Mutex<HashMap<i64, Item>>,
     next_id: AtomicI64,
+}
+
+impl Default for InMemoryItemRepository {
+    fn default() -> Self {
+        Self {
+            items: Mutex::new(HashMap::new()),
+            // id 从 1 开始，与 PG bigserial 语义一致；0 保留为未插入占位
+            //（create 防环检查以占位 id 0 调用 assert_no_cycle，不能与真实节点冲突）。
+            next_id: AtomicI64::new(1),
+        }
+    }
 }
 
 impl InMemoryItemRepository {
@@ -225,9 +235,11 @@ impl ItemRepository for InMemoryItemRepository {
         Ok(self.items.lock().unwrap().get(&id).cloned())
     }
 
+    // item 不存 user_id，归属校验由应用层查 Workspace 完成（与 Pg 实现 SQL join 的防线等价）。
     async fn list_children(
         &self,
         workspace_id: i64,
+        _user_id: i64,
         parent_id: Option<i64>,
     ) -> domain::Result<Vec<Item>> {
         let mut list: Vec<Item> = self
@@ -254,11 +266,15 @@ impl ItemRepository for InMemoryItemRepository {
         Ok(self.tree(&items))
     }
 
-    async fn ancestors(&self, item_id: i64) -> domain::Result<Vec<i64>> {
+    // item 不存 user_id，归属校验由应用层查 Workspace 完成（与 Pg 实现 SQL join 的防线等价）。
+    async fn ancestors(&self, item_id: i64, _user_id: i64) -> domain::Result<Vec<i64>> {
         let items = self.items.lock().unwrap();
         let mut chain = vec![item_id];
         let mut cur = items.get(&item_id).and_then(|i| i.parent_id);
         while let Some(parent) = cur {
+            if chain.contains(&parent) {
+                break; // 防自环：损坏树终止，避免无限循环
+            }
             chain.push(parent);
             cur = items.get(&parent).and_then(|i| i.parent_id);
         }

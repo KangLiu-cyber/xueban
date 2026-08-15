@@ -164,13 +164,23 @@ async fn item_tree_insert_list_and_ownership() {
 
     // 子节点查询：根目录的子节点只有 child，空父查询两者皆有。
     let children = repo
-        .list_children(ws_id, Some(root))
+        .list_children(ws_id, user_id, Some(root))
         .await
         .expect("查询失败");
     assert_eq!(children.len(), 1);
     assert_eq!(children[0].id, child);
-    let roots = repo.list_children(ws_id, None).await.expect("查询失败");
+    let roots = repo
+        .list_children(ws_id, user_id, None)
+        .await
+        .expect("查询失败");
     assert_eq!(roots.len(), 2);
+
+    // 归属：他人查不到本空间子节点（join 第二道防线）。
+    let foreign = repo
+        .list_children(ws_id, other, None)
+        .await
+        .expect("查询失败");
+    assert!(foreign.is_empty());
 
     // 完整树：深度组装 + id 升序。
     let tree = repo.list_tree(ws_id, user_id).await.expect("树查询失败");
@@ -207,6 +217,7 @@ async fn item_update_move_and_ancestors_chain() {
     setup(&pool).await;
     let user_repo = PgUserRepository::new(pool.clone());
     let user_id = insert_user(&user_repo, "anc").await;
+    let other = insert_user(&user_repo, "anc2").await;
     let ws_repo = PgWorkspaceRepository::new(pool.clone());
     let ws_id = ws_repo
         .insert(&new_workspace(user_id))
@@ -230,9 +241,9 @@ async fn item_update_move_and_ancestors_chain() {
     let c = repo.insert(&make(Some(b), "C")).await.expect("插入失败");
 
     // 根→自身 链：[A, B, C]。
-    let chain = repo.ancestors(c).await.expect("祖先链失败");
+    let chain = repo.ancestors(c, user_id).await.expect("祖先链失败");
     assert_eq!(chain, vec![a, b, c]);
-    let chain_root = repo.ancestors(a).await.expect("祖先链失败");
+    let chain_root = repo.ancestors(a, user_id).await.expect("祖先链失败");
     assert_eq!(chain_root, vec![a]);
 
     // 移动：C 挂到 A 下。
@@ -243,8 +254,15 @@ async fn item_update_move_and_ancestors_chain() {
         .expect("应找到");
     moved.parent_id = Some(a);
     repo.update(&moved, user_id).await.expect("更新失败");
-    let chain_after = repo.ancestors(c).await.expect("祖先链失败");
+    let chain_after = repo.ancestors(c, user_id).await.expect("祖先链失败");
     assert_eq!(chain_after, vec![a, c]);
+    // 归属：他人查不到祖先链（join 第二道防线）。
+    assert!(
+        repo.ancestors(c, other)
+            .await
+            .expect("祖先链失败")
+            .is_empty()
+    );
 }
 
 #[tokio::test]

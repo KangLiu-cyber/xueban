@@ -166,15 +166,23 @@ impl ItemRepository for PgItemRepository {
         .transpose()
     }
 
-    async fn list_children(&self, workspace_id: i64, parent_id: Option<i64>) -> Result<Vec<Item>> {
+    // 归属守卫：join workspaces 限定（第二道防线）。
+    async fn list_children(
+        &self,
+        workspace_id: i64,
+        user_id: i64,
+        parent_id: Option<i64>,
+    ) -> Result<Vec<Item>> {
         let rows = sqlx::query(
-            "select id, workspace_id, parent_id, kind, name, content,
-                    created_by, created_at, updated_at
-             from items
-             where workspace_id = $1 and parent_id is not distinct from $2
-             order by id",
+            "select i.id, i.workspace_id, i.parent_id, i.kind, i.name, i.content,
+                    i.created_by, i.created_at, i.updated_at
+             from items i
+             join workspaces w on w.id = i.workspace_id and w.user_id = $2
+             where i.workspace_id = $1 and i.parent_id is not distinct from $3
+             order by i.id",
         )
         .bind(workspace_id)
+        .bind(user_id)
         .bind(parent_id)
         .fetch_all(&self.pool)
         .await
@@ -209,17 +217,21 @@ impl ItemRepository for PgItemRepository {
         Ok(assemble_tree(items))
     }
 
-    async fn ancestors(&self, item_id: i64) -> Result<Vec<i64>> {
-        // CTE 产出 [自身, 父, 祖父, ...]，反转成 根→自身（与 inmem 语义一致）。
+    // CTE 产出 [自身, 父, 祖父, ...]，反转成 根→自身（与 inmem 语义一致）。
+    // 归属守卫：anchor 行 join workspaces 限定 user（第二道防线）。
+    async fn ancestors(&self, item_id: i64, user_id: i64) -> Result<Vec<i64>> {
         let rows = sqlx::query(
             "with recursive chain as (
-               select id, parent_id from items where id = $1
+               select i.id, i.parent_id from items i
+               join workspaces w on w.id = i.workspace_id and w.user_id = $2
+               where i.id = $1
                union all
                select i.id, i.parent_id from items i join chain c on i.id = c.parent_id
              )
              select id from chain",
         )
         .bind(item_id)
+        .bind(user_id)
         .fetch_all(&self.pool)
         .await
         .map_err(map_sqlx_error)?;

@@ -70,12 +70,18 @@ pub trait ItemRepository {
     async fn update(&self, item: &Item, user_id: i64) -> Result<()>;
     /// 按归属查单个节点。
     async fn find_by_id(&self, id: i64, user_id: i64) -> Result<Option<Item>>;
-    /// 查某节点的直接子节点。
-    async fn list_children(&self, workspace_id: i64, parent_id: Option<i64>) -> Result<Vec<Item>>;
+    /// 查某节点的直接子节点（携带归属：workspace 属于 user，SQL 层 join 限定）。
+    async fn list_children(
+        &self,
+        workspace_id: i64,
+        user_id: i64,
+        parent_id: Option<i64>,
+    ) -> Result<Vec<Item>>;
     /// 查完整树（adapter 用 WITH RECURSIVE 组装为 ItemNode）。
     async fn list_tree(&self, workspace_id: i64, user_id: i64) -> Result<Vec<ItemNode>>;
     /// 取某节点的祖先链（从根到自身，含自身），防环校验用。
-    async fn ancestors(&self, item_id: i64) -> Result<Vec<i64>>;
+    /// 携带归属：节点属于 user（SQL 层 join 限定）。
+    async fn ancestors(&self, item_id: i64, user_id: i64) -> Result<Vec<i64>>;
     /// 删除节点（须带归属校验：item 属于 user）。级联行为（子树/批注/
     /// 归属题目）由存储实现承担（SQL 层 ON DELETE CASCADE 或等价模拟）。
     async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;

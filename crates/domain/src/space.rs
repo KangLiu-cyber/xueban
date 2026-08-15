@@ -85,6 +85,10 @@ pub struct ItemNode {
 /// 防环不变式（领域服务）：把 `item_id` 移动到 `new_parent` 时，
 /// `ancestors` 是从根到新父节点的祖先 id 链（含新父自身）。
 /// 若链中出现 `item_id` 本身，则新父是自己的后代，拒绝移动。
+///
+/// 创建路径复用同一守卫：新建节点 id 尚未分配，以占位 0 传入——0 永不与
+/// 真实节点 id 冲突（仓储 id 从 1 起），健康树上必然通过，从而把不变式
+/// 挂在所有写入口；未来补移动用例时该守卫直接生效。
 pub fn assert_no_cycle(new_parent: Option<i64>, item_id: i64, ancestors: &[i64]) -> Result<()> {
     let Some(parent) = new_parent else {
         return Ok(());
