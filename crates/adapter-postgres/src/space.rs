@@ -133,7 +133,7 @@ impl ItemRepository for PgItemRepository {
     async fn update(&self, item: &Item, user_id: i64) -> Result<()> {
         sqlx::query(
             "update items i set parent_id = $2, kind = $3, name = $4, content = $5, updated_at = $6
-             using workspaces w
+             from workspaces w
              where i.id = $1 and w.id = i.workspace_id and w.user_id = $7",
         )
         .bind(item.id)
