@@ -1,3 +1,4 @@
 target/
 web/dist/
+web/dist.trunk-lock
 desktop/gen/

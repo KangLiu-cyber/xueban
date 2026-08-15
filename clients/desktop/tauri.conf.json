@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../web/dist",
     "beforeDevCommand": "trunk serve ../web",
-    "beforeBuildCommand": "trunk build ../web"
+    "beforeBuildCommand": "trunk build --release ../web"
   },
   "app": {
     "windows": [

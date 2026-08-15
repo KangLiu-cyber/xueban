@@ -31,6 +31,12 @@ pub fn mount() {
     leptos::mount::mount_to_body(|| view! { <Root /> });
 }
 
+/// wasm 实例化后自动挂载（trunk 的注入脚本只 await init，不会调用 mount）。
+#[wasm_bindgen::prelude::wasm_bindgen(start)]
+fn start() {
+    mount();
+}
+
 /// Tauri 薄壳引用的应用名。
 pub fn app_name() -> &'static str {
     "学伴"
