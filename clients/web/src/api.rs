@@ -51,7 +51,6 @@ pub struct Workspace {
     pub exam_goal: String,
     pub exam_date: Option<NaiveDate>,
     pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
