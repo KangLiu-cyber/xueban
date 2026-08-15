@@ -41,10 +41,13 @@
 ## 构建与验证
 
 ```sh
-cargo check --workspace            # 后端（仓库根目录）
+make dev                             # 本地一键启动后端（依赖本机 PostgreSQL）
+make gate                            # 提交门禁：fmt + clippy + test + check 全绿
+make build-musl && make package      # 复现 CI：cross 编译 musl 二进制 + 打安装包
 cd clients && cargo check --workspace   # 前端 Rust（web + desktop）
 ```
 
+- 提交门禁即 `make gate`；CI（.github/workflows/ci.yml）gate job 与之一致
 - 安卓端不参与 cargo workspace，用 Android Studio 打开 `clients/android`（gradle wrapper 已就位，需 JDK）
 - `clients/` 独立 workspace：wasm target 与 Tauri 原生依赖不拖累后端编译循环
 

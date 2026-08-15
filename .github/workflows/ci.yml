@@ -1,0 +1,44 @@
+# CI（docs/architecture.md §11）：
+#   gate        — 提交门禁（fmt + clippy + test + check），与本地 `make gate` 一致
+#   build-musl  — cross 交叉编译 x86_64-unknown-linux-musl 静态二进制并打服务端安装包
+# 脚本统一放 scripts/（build-musl.sh / package-server.sh），本地 `make build-musl` 可复现。
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  gate:
+    name: 门禁（fmt + clippy + test + check）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: 格式检查
+        run: cargo fmt --all -- --check
+      - name: 门禁
+        run: make gate
+
+  build-musl:
+    name: cross 编译 musl 安装包
+    runs-on: ubuntu-latest
+    needs: gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: 安装 cross
+        run: cargo install cross --locked
+      - name: cross 交叉编译
+        run: scripts/build-musl.sh
+      - name: 打包安装包
+        run: scripts/package-server.sh
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: xueban-server
+          path: dist/*.tar.gz

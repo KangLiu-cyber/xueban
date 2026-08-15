@@ -191,6 +191,10 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   └── android/                 # 安卓端：Kotlin + Jetpack Compose
 │       └── app/                 # 主应用模块（Material 3，WindowSizeClass 折叠屏适配）
 ├── migrations/                  # SQL 迁移脚本
+├── skills/                      # 内置 Skill 目录（一个子文件夹一个 skill，内含 skill.md）
+├── scripts/                     # 工程脚本：门禁 / cross 交叉编译 / 安装包打包
+├── deploy/                      # 部署资产：Dockerfile（仅 COPY musl 静态二进制）+ docker-compose
+├── .github/workflows/           # CI：cross 编译 x86_64-unknown-linux-musl + 构建安装包
 └── docs/                        # 架构 / 需求文档与 UI 原型
 ```
 
@@ -460,24 +464,23 @@ Agent 生成（原始数据）                使用过程（派生数据）
 
 ## 十一、部署架构
 
-起步阶段单机部署，Docker Compose 编排：
+起步阶段单机部署，Docker Compose 编排（`deploy/`）：
 
 ```
 ┌────────────────────────────────────────────┐
 │  单台云服务器（2C4G 起步）                      │
-│  ┌──────┐   ┌──────────────────────────┐   │
-│  │ Caddy │──▶│ app（Rust 单进程）          │   │
-│  │ 反代+  │   │  REST 适配器 + MCP 适配器   │   │
-│  │ 自动证书│   └───────────┬──────────────┘   │
-│  └──────┘               ▼                  │
-│              ┌──────────────┐  ┌─────────┐ │
-│              │ PostgreSQL 16 │  │ Redis(可选)│ │
-│              └──────────────┘  └─────────┘ │
-│  每日 pg_dump → 对象存储，保留 30 天            │
+│  ┌──────────────────┐   ┌───────────────┐  │
+│  │ backend（Rust 单进程 │──▶│ PostgreSQL 16 │  │
+│  │  musl 静态二进制，     │   └───────────────┘  │
+│  │  REST 适配器 + MCP 适配器） │                   │
+│  └──────────────────┘                        │
 └────────────────────────────────────────────┘
 ```
 
-- Caddy 负责 TLS 与域名反代，自动续期证书。
+- **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制并打成安装包（tar.gz：bootstrap + skills/）；`deploy/Dockerfile` 基于 alpine，只把二进制与 skills/ 目录 COPY 进去，构建产物即运行镜像。
+- **compose 只编排两个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `backend`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT` 环境变量注入）。
+- **数据库迁移内置**：sqlx::migrate! 编译期嵌入迁移脚本，backend 启动时自动执行，镜像无需挂载 migrations/。
+- TLS 与域名反代不在 compose 内（由部署侧网关 / 平台另行处理）；数据库备份（每日 pg_dump → 对象存储）由部署侧 cron 或托管服务承担，不再内置 sidecar。
 - 服务端无推理负载，2C4G 可支撑数千日活；瓶颈出现时优先升配。
 - 演进路径：单进程 → 读写分离（Postgres 只读副本）→ 按限界上下文拆服务（六边形边界即拆分线，仅当团队与流量同时增长时）。
 

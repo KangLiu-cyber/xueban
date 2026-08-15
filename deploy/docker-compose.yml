@@ -1,0 +1,46 @@
+# 单机部署编排（docs/architecture.md §11）：只编排 postgres + backend 两个服务。
+# 镜像不做编译——先跑 scripts/build-musl.sh 产出 musl 静态二进制，再 build 本编排。
+#
+# 用法：
+#   docker compose -f deploy/docker-compose.yml up -d --build
+# 环境变量：POSTGRES_PASSWORD（生产必须改）、MCP_ENDPOINT（Agent 凭证下发的对外地址）。
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-xueban}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xueban-dev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-xueban}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-xueban}:${POSTGRES_PASSWORD:-xueban-dev-password}@postgres:5432/${POSTGRES_DB:-xueban}
+      BIND_ADDR: 0.0.0.0:8080
+      MCP_ENDPOINT: ${MCP_ENDPOINT:-http://127.0.0.1:8080/mcp}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pgdata:
