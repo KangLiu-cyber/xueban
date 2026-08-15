@@ -1,7 +1,9 @@
 # CI（docs/architecture.md §11）：
 #   gate        — 提交门禁（fmt + clippy + test + check），与本地 `make gate` 一致
-#   build-musl  — cross 交叉编译 x86_64-unknown-linux-musl 静态二进制并打服务端安装包
-#   release     — CI 走完直接发布 GitHub Release（推 main 时，自动打 tag + 上传安装包）
+#   build-musl  — cross 编译 musl 静态二进制 + trunk 编译 web 产物 → 服务端部署包
+#   android     — 安卓 APK（独立安装包）
+#   desktop     — 桌面端安装包（Tauri，独立安装包）
+#   release     — CI 走完直接发布 GitHub Release（推 main 时，自动打 tag，上传三个不同的包）
 # 脚本统一放 scripts/（build-musl.sh / package-server.sh），本地 `make build-musl` 可复现。
 
 name: CI
@@ -26,7 +28,7 @@ jobs:
         run: make gate
 
   build-musl:
-    name: cross 编译 musl 安装包
+    name: 构建服务端部署包（cross musl + trunk web）
     runs-on: ubuntu-latest
     needs: gate
     steps:
@@ -34,20 +36,72 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: 安装 cross
         run: cargo install cross --locked
-      - name: cross 交叉编译
+      - name: cross 交叉编译（musl 静态二进制）
         run: scripts/build-musl.sh
-      - name: 打包安装包
+      - name: 安装 trunk
+        run: cargo install trunk --locked
+      - name: 编译前端 web 产物
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cd clients/web && trunk build --release
+      - name: 打包部署包（二进制 + skills + web + deploy 编排）
         run: scripts/package-server.sh
-      - name: 上传安装包
+      - name: 上传服务端部署包
         uses: actions/upload-artifact@v4
         with:
           name: xueban-server
           path: dist/*.tar.gz
 
+  android:
+    name: 构建安卓 APK
+    runs-on: macos-latest
+    needs: gate
+    defaults:
+      run:
+        working-directory: clients/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: 构建 APK（debug 可安装验证）
+        run: ./gradlew :app:assembleDebug -q
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xueban-android
+          path: app/build/outputs/apk/debug/*.apk
+
+  desktop:
+    name: 构建桌面端安装包
+    runs-on: ubuntu-latest
+    needs: gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: 安装系统依赖（Tauri）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: 安装 trunk
+        run: cargo install trunk --locked
+      - name: 编译桌面端安装包（tauri 自动先 trunk build 前端）
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cd clients/desktop && cargo tauri build --release
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: xueban-desktop
+          path: |
+            clients/desktop/target/release/bundle/deb/*.deb
+            clients/desktop/target/release/bundle/appimage/*.AppImage
+
   release:
     name: 发布 GitHub Release
     runs-on: ubuntu-latest
-    needs: build-musl
+    needs: [build-musl, android, desktop]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -55,14 +109,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: xueban-server
           path: dist
-      - name: 创建 Release（自动打 tag v<version>-<sha> + 上传安装包）
+          merge-multiple: true
+      - name: 创建 Release（自动打 tag v<version>-<sha>，上传三个不同的包）
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(awk -F'"' '/^version *=/{print $2; exit}' crates/bootstrap/Cargo.toml)
           tag="v${version}-${GITHUB_SHA::7}"
-          gh release create "$tag" dist/*.tar.gz \
-            --title "xueban-server ${tag}" \
-            --notes "CI 自动发布：musl 静态二进制 + skills/ 目录安装包（tar.gz），含 v${version}"
+          gh release create "$tag" dist/*.tar.gz dist/*.apk dist/*.deb dist/*.AppImage \
+            --title "xueban ${tag}" \
+            --notes "CI 自动发布，含三个独立的包：服务端部署包（tar.gz，docker 部署源）、安卓 APK、桌面端安装包"
