@@ -121,6 +121,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
+          # artifact 保留各自 job 内的相对路径（apk 嵌套在 app/build/... 下），先全部收集到 dist 根
+          find dist -type f \( -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.AppImage' \) -exec mv {} dist/ \;
           gh release create "$tag" dist/*.tar.gz dist/*.apk dist/*.deb dist/*.AppImage \
             --title "xueban ${tag}" \
             --notes "CI 自动发布，含三个独立的包：服务端部署包（tar.gz，docker 部署源）、安卓 APK、桌面端安装包"
