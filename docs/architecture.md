@@ -353,6 +353,7 @@ events (
 | 错题 | `GET /api/v1/wrong` | ListWrong |
 | 错题 | `GET /api/v1/wrong/stats` | WrongStats（累计/近 7 天新增/已掌握，错题本统计卡片） |
 | 错题 | `POST /api/v1/wrong/:id/master` | MarkMastered |
+| 错题 | `POST /api/v1/wrong/:id/unmaster` | MarkMastered（取消掌握） |
 | 组卷 | `POST /api/v1/papers` | AssemblePaper |
 | 组卷 | `GET /api/v1/papers/:id` | ReadPaper |
 | 组卷 | `POST /api/v1/papers/:id/submit` | SubmitPaper |

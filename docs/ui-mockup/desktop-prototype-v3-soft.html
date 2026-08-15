@@ -774,7 +774,7 @@ table.cheat td:first-child { font-weight: 600; color: var(--ink); }
           </div>
           <div class="form-row">
             <label class="form-label">密码</label>
-            <input class="form-input" type="password" id="regPassword" placeholder="至少 6 位">
+            <input class="form-input" type="password" id="regPassword" placeholder="8~64 位">
           </div>
           <div class="form-row">
             <label class="form-label">确认密码</label>
@@ -2044,7 +2044,7 @@ function doRegister() {
   const p1 = document.getElementById('regPassword').value;
   const p2 = document.getElementById('regPassword2').value;
   if (!acc) { toast('请输入账号'); return; }
-  if (p1.length < 6) { toast('密码至少 6 位'); return; }
+  if (p1.length < 8 || p1.length > 64) { toast('密码 8~64 位'); return; }
   if (p1 !== p2) { toast('两次输入的密码不一致'); return; }
   toast('注册成功，请登录');
   document.getElementById('loginAccount').value = acc;
