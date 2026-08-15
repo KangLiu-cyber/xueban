@@ -149,7 +149,6 @@ fn redo_submit(state: AppState, chosen: Chosen) {
         return;
     };
     let qid = item.question.id;
-    let wrong_id = item.wrong.id;
     let st = state;
     spawn_local(async move {
         match api::answer(&AnswerRequest {
@@ -169,7 +168,8 @@ fn redo_submit(state: AppState, chosen: Chosen) {
                 st.redo_state.set(sts);
                 if out.is_correct {
                     st.toast("答对了，已移出错题本");
-                    let _ = api::mark_mastered(wrong_id).await;
+                    // P0-3：后端按 question_id 定位错题，传题目 id 而非 wrong.id
+                    let _ = api::mark_mastered(qid).await;
                 } else {
                     st.toast("又答错了，保留在错题本");
                 }
