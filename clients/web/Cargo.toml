@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "wasmbind"] }
 console_error_panic_hook = "0.1"
 gloo-net = "0.6"
 gloo-storage = "0.3"
