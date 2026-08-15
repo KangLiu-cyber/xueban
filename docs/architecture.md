@@ -478,6 +478,7 @@ Agent 生成（原始数据）                使用过程（派生数据）
 ```
 
 - **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制并打成安装包（tar.gz：bootstrap + skills/）；`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录由 compose 只读挂载（`../skills:/app/skills:ro`），宿主直接编辑 skills/ 即更新，无需重建镜像。
+- **CI 走完直接发 Release**：gate + build-musl 通过后，推 main 即自动创建 GitHub Release（tag `v<version>-<sha>`），安装包作为 Release 资产上传，无需手动打 tag。
 - **compose 只编排两个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `backend`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT` 环境变量注入）。
 - **数据库迁移内置**：sqlx::migrate! 编译期嵌入迁移脚本，backend 启动时自动执行，镜像无需挂载 migrations/。
 - TLS 与域名反代不在 compose 内（由部署侧网关 / 平台另行处理）；数据库备份（每日 pg_dump → 对象存储）由部署侧 cron 或托管服务承担，不再内置 sidecar。

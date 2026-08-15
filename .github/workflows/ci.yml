@@ -1,6 +1,7 @@
 # CI（docs/architecture.md §11）：
 #   gate        — 提交门禁（fmt + clippy + test + check），与本地 `make gate` 一致
 #   build-musl  — cross 交叉编译 x86_64-unknown-linux-musl 静态二进制并打服务端安装包
+#   release     — CI 走完直接发布 GitHub Release（推 main 时，自动打 tag + 上传安装包）
 # 脚本统一放 scripts/（build-musl.sh / package-server.sh），本地 `make build-musl` 可复现。
 
 name: CI
@@ -42,3 +43,26 @@ jobs:
         with:
           name: xueban-server
           path: dist/*.tar.gz
+
+  release:
+    name: 发布 GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-musl
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xueban-server
+          path: dist
+      - name: 创建 Release（自动打 tag v<version>-<sha> + 上传安装包）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(awk -F'"' '/^version *=/{print $2; exit}' crates/bootstrap/Cargo.toml)
+          tag="v${version}-${GITHUB_SHA::7}"
+          gh release create "$tag" dist/*.tar.gz \
+            --title "xueban-server ${tag}" \
+            --notes "CI 自动发布：musl 静态二进制 + skills/ 目录安装包（tar.gz），含 v${version}"
