@@ -214,7 +214,8 @@ impl ItemRepository for InMemoryItemRepository {
         Ok(id)
     }
 
-    async fn update(&self, item: &Item) -> domain::Result<()> {
+    // item 不存 user_id，归属校验由应用层 read_item 完成（与 Pg 实现 SQL join 的防线等价）。
+    async fn update(&self, item: &Item, _user_id: i64) -> domain::Result<()> {
         self.items.lock().unwrap().insert(item.id, item.clone());
         Ok(())
     }

@@ -242,7 +242,7 @@ async fn item_update_move_and_ancestors_chain() {
         .expect("查询失败")
         .expect("应找到");
     moved.parent_id = Some(a);
-    repo.update(&moved).await.expect("更新失败");
+    repo.update(&moved, user_id).await.expect("更新失败");
     let chain_after = repo.ancestors(c).await.expect("祖先链失败");
     assert_eq!(chain_after, vec![a, c]);
 }

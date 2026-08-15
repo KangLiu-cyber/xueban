@@ -2,7 +2,7 @@
 //!
 //! options/answer/chosen/config/question_ids/result 为 jsonb 列，此处与领域类型
 //! 互转（serde）；读路径在 SQL 层强制 user_id 归属（questions/papers join
-//! workspaces），作为隔离第二道防线。
+//! workspaces），作为隔离第二道防线；写路径（papers.submit）同样以 user_id 守卫。
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -384,9 +384,11 @@ impl PaperRepository for PgPaperRepository {
                     .map_err(|e| Error::Storage(format!("试卷结果序列化失败: {e}")))
             })
             .transpose()?;
-        sqlx::query("update papers set result = $2 where id = $1")
+        // 写路径守卫：user_id 限定归属（第二道防线）。
+        sqlx::query("update papers set result = $2 where id = $1 and user_id = $3")
             .bind(paper.id)
             .bind(result)
+            .bind(paper.user_id)
             .execute(&self.pool)
             .await
             .map_err(map_sqlx_error)?;

@@ -218,7 +218,7 @@ where
         Self::check_content_size(&content)?;
         item.content = Some(content);
         item.updated_at = Utc::now();
-        self.items.update(&item).await?;
+        self.items.update(&item, user_id).await?;
         Ok(item)
     }
 

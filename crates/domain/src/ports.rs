@@ -65,7 +65,9 @@ pub trait WorkspaceRepository {
 pub trait ItemRepository {
     /// 插入节点，返回落库后的新 id。
     async fn insert(&self, item: &Item) -> Result<i64>;
-    async fn update(&self, item: &Item) -> Result<()>;
+    /// 更新节点（须带归属校验：item 属于 user）。Item 不存 user_id，
+    /// 归属由调用方以参数携带，实现侧在 SQL 层强制（workspaces join）。
+    async fn update(&self, item: &Item, user_id: i64) -> Result<()>;
     /// 按归属查单个节点。
     async fn find_by_id(&self, id: i64, user_id: i64) -> Result<Option<Item>>;
     /// 查某节点的直接子节点。

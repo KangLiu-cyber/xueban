@@ -1,7 +1,7 @@
 //! 学习空间输出端口实现：workspaces / items / annotations 三张表。
 //!
 //! 读路径在 SQL 层强制 user_id 归属（workspaces join），作为隔离第二道防线；
-//! 写路径由应用层先完成归属校验，此处按 id 幂等写入。
+//! 写路径（update/delete）同样在 SQL 层以 user_id 守卫，应用层校验之外再加一道防线。
 
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
@@ -69,12 +69,13 @@ impl WorkspaceRepository for PgWorkspaceRepository {
     async fn update(&self, ws: &Workspace) -> Result<()> {
         sqlx::query(
             "update workspaces set name = $2, exam_goal = $3, exam_date = $4
-             where id = $1",
+             where id = $1 and user_id = $5",
         )
         .bind(ws.id)
         .bind(&ws.name)
         .bind(&ws.exam_goal)
         .bind(ws.exam_date)
+        .bind(ws.user_id)
         .execute(&self.pool)
         .await
         .map_err(map_sqlx_error)?;
@@ -128,10 +129,12 @@ impl ItemRepository for PgItemRepository {
         row.try_get::<i64, _>("id").map_err(map_sqlx_error)
     }
 
-    async fn update(&self, item: &Item) -> Result<()> {
+    // 写路径守卫：join workspaces 限定归属（第二道防线），应用层校验之外再加一道。
+    async fn update(&self, item: &Item, user_id: i64) -> Result<()> {
         sqlx::query(
-            "update items set parent_id = $2, kind = $3, name = $4, content = $5, updated_at = $6
-             where id = $1",
+            "update items i set parent_id = $2, kind = $3, name = $4, content = $5, updated_at = $6
+             using workspaces w
+             where i.id = $1 and w.id = i.workspace_id and w.user_id = $7",
         )
         .bind(item.id)
         .bind(item.parent_id)
@@ -139,6 +142,7 @@ impl ItemRepository for PgItemRepository {
         .bind(&item.name)
         .bind(&item.content)
         .bind(item.updated_at)
+        .bind(user_id)
         .execute(&self.pool)
         .await
         .map_err(map_sqlx_error)?;
