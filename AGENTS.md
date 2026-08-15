@@ -42,9 +42,10 @@
 
 ```sh
 make dev                             # 本地一键启动后端（依赖本机 PostgreSQL）
+make web                             # 启动前端开发服务器（trunk，需 wasm32 target）
+make desktop                         # 启动桌面端（Tauri 壳，自动先起 trunk）
 make gate                            # 提交门禁：fmt + clippy + test + check 全绿
 make build-musl && make package      # 复现 CI：cross 编译 musl 二进制 + 打安装包
-cd clients && cargo check --workspace   # 前端 Rust（web + desktop）
 ```
 
 - 提交门禁即 `make gate`；CI（.github/workflows/ci.yml）gate job 与之一致
