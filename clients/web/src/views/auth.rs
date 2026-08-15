@@ -41,12 +41,14 @@ pub fn AuthPage() -> impl IntoView {
                         step2.set(true);
                     } else if let Some(u) = pending_user.get_untracked() {
                         st.user.set(Some(u));
+                        st.entered.set(true);
                     }
                 }
                 Err(e) => {
                     st.toast(&format!("获取备考空间失败：{}", e));
                     if let Some(u) = pending_user.get_untracked() {
                         st.user.set(Some(u));
+                        st.entered.set(true);
                     }
                 }
             }
@@ -157,11 +159,13 @@ pub fn AuthPage() -> impl IntoView {
                     st.toast(&format!("已创建备考空间「{}」", goal2));
                     if let Some(user) = pending_user.get_untracked() {
                         st.user.set(Some(user));
-                        let w = gloo_timers::callback::Timeout::new(700, move || {
-                            st.agent_open.set(true);
-                        });
-                        w.forget();
                     }
+                    st.entered.set(true);
+                    let st2 = st;
+                    let w = gloo_timers::callback::Timeout::new(700, move || {
+                        st2.agent_open.set(true);
+                    });
+                    w.forget();
                 }
                 Err(e) => st.toast(&e.to_string()),
             }

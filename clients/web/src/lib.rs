@@ -17,7 +17,7 @@ fn Root() -> impl IntoView {
     provide_context(state);
     view! {
         <Show
-            when=move || state.token.get().is_some()
+            when=move || state.entered.get()
             fallback=move || view! { <views::auth::AuthPage /> }
         >
             <views::shell::Shell />

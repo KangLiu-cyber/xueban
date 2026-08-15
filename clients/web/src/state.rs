@@ -210,6 +210,9 @@ pub struct RedoState {
 
 #[derive(Clone, Copy)]
 pub struct AppState {
+    /// 是否已进入主界面。登录成功后先停留在登录页第二步（创建备考空间），
+    /// 确认创建（或已有空间）后才置 true 切换进 Shell —— 与 token 写入解耦。
+    pub entered: RwSignal<bool>,
     pub token: RwSignal<Option<String>>,
     pub user: RwSignal<Option<UserDto>>,
     pub workspaces: RwSignal<Vec<Workspace>>,
@@ -307,6 +310,7 @@ impl AppState {
             .unwrap_or(0);
 
         Self {
+            entered: RwSignal::new(ls_get(LS_TOKEN).is_some()),
             token: RwSignal::new(token),
             user: RwSignal::new(user),
             workspaces: RwSignal::new(Vec::new()),
@@ -378,6 +382,7 @@ impl AppState {
         ls_remove(LS_USER);
         ls_remove(LS_WORKSPACE);
         crate::api::set_auth_token(None);
+        self.entered.set(false);
         self.token.set(None);
         self.user.set(None);
         self.workspace.set(None);
