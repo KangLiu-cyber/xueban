@@ -8,7 +8,7 @@ use leptos::task::spawn_local;
 use wasm_bindgen::prelude::{Closure, JsValue};
 use wasm_bindgen::JsCast;
 
-use crate::api::{self, QuestionType, WorkspaceInput};
+use crate::api::{self, QuestionType, Workspace, WorkspaceInput};
 use crate::state::{episode_map, fmt_date_ymd, fmt_duration, AppState, View};
 use crate::views::assembly::{
     ask_start_mock, cart_stats, q_source, q_subject, wrong_times, TARGET,
@@ -186,6 +186,68 @@ pub fn Modals(state: AppState) -> impl IntoView {
             }
         });
     });
+
+    // ---- P2-10：切换备考空间 ----
+    let switch_workspace = move |ws: Workspace| {
+        // 模考会话绑定旧空间：先停表清会话再换空间，防止错卷串空间。
+        crate::views::mock::pause_timer();
+        state.mock.set(None);
+        crate::state::ls_remove(crate::state::LS_MOCK_PAPER);
+        state.set_workspace(&ws);
+        state.episode.set(None);
+        state.setup_open.set(false);
+        state.toast(&format!("已切换到备考空间「{}」", ws.name));
+        let st = state;
+        spawn_local(async move {
+            init_data(st).await;
+        });
+    };
+    let ws_rows = move || {
+        let cur_id = state.workspace.get().map(|w| w.id);
+        let mut rows: Vec<AnyView> = state
+            .workspaces
+            .get()
+            .into_iter()
+            .map(|ws| {
+                let is_cur = cur_id == Some(ws.id);
+                let st = state;
+                (view! {
+                    <div class="ws-row" class:active=is_cur
+                        on:click=move |_| {
+                            if st.workspace.get_untracked().map(|w| w.id) == Some(ws.id) {
+                                return;
+                            }
+                            switch_workspace(ws.clone());
+                        }>
+                        <div class="ws-row-main">
+                            <div class="ws-row-name">{ws.name.clone()}</div>
+                            <div class="ws-row-goal">{ws.exam_goal.clone()}</div>
+                        </div>
+                        <span class="ws-row-meta">
+                            {move || {
+                                if is_cur {
+                                    "当前".to_string()
+                                } else {
+                                    ws.exam_date
+                                        .map(|d| format!("倒计时 {} 天", crate::state::exam_days_left(Some(d))))
+                                        .unwrap_or_else(|| "未设考试日期".to_string())
+                                }
+                            }}
+                        </span>
+                    </div>
+                })
+                .into_any()
+            })
+            .collect::<Vec<_>>();
+        if rows.is_empty() {
+            rows.push((
+                view! {
+                    <div style="padding:10px 12px;font-size:12px;color:var(--muted-light)">"暂无备考空间"</div>
+                },
+            ).into_any());
+        }
+        rows
+    };
 
     // ---- 确认弹窗 ----
     let confirm_modal = move || {
@@ -575,6 +637,11 @@ pub fn Modals(state: AppState) -> impl IntoView {
                                 <div class="modal-sub">"修改考试目标与考试日期，倒计时同步更新"</div>
                             </div>
                             <button class="modal-close" on:click=move |_| state.setup_open.set(false)>"✕"</button>
+                        </div>
+                        <div class="ws-switch">
+                            <div class="ws-switch-title">"切换备考空间"</div>
+                            {ws_rows}
+                            <div class="ws-hint">"点击其他空间即可切换 · 学习数据按空间相互独立"</div>
                         </div>
                         <div class="modal-body">
                             <div class="form-row">

@@ -66,10 +66,8 @@ async fn load_scope(state: AppState, scope: QuizScope) {
     state.quiz_idx.set(0);
     state.quiz_chosen.set(vec![None; n]);
     state.quiz_outcomes.set(vec![None; n]);
-    state.quiz_answers.set(vec![None; n]);
     state.quiz_correct_cnt.set(0);
     state.quiz_wrong_cnt.set(0);
-    state.quiz_badge.set(n as u32);
 }
 
 /// 当前范围的作答归属串：错题本 / 集名，跨集综合练不传 scope。
@@ -103,9 +101,6 @@ fn submit_answer(state: AppState, idx: usize, q: &QuestionBrief, chosen: Chosen)
                 let mut outs = st.quiz_outcomes.get_untracked();
                 outs[idx] = Some(out.clone());
                 st.quiz_outcomes.set(outs);
-                let mut ans = st.quiz_answers.get_untracked();
-                ans[idx] = Some(out.answer.clone());
-                st.quiz_answers.set(ans);
                 if out.is_correct {
                     st.quiz_correct_cnt.update(|n| *n += 1);
                     st.toast("答对了，已记录");

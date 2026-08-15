@@ -45,11 +45,16 @@ fn close_all_modals(state: AppState) {
 
 /// 初始化：空间回退 → 树 / 课程 / 题库 / 错题本。
 pub(crate) async fn init_data(state: AppState) {
+    // P2-10：每次初始化都刷新工作空间列表（弹窗切换列表 / 侧栏回退依赖它）；
+    // 列表为空且当前无空间时，仍需继续走下面的空间回退逻辑。
+    let list = api::list_workspaces().await.ok();
+    if let Some(list) = &list {
+        state.workspaces.set(list.clone());
+    }
     let ws = match state.workspace.get_untracked() {
         Some(w) => Some(w),
-        None => match api::list_workspaces().await {
-            Ok(list) if !list.is_empty() => {
-                state.workspaces.set(list.clone());
+        None => match list {
+            Some(list) if !list.is_empty() => {
                 let w = list[0].clone();
                 state.set_workspace(&w);
                 Some(w)
