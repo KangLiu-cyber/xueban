@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,62 +52,71 @@ fun QuizScreen(state: AppState, onOpenGoal: () -> Unit) {
             subtitle = "题库来自 AI 为每集笔记生成的习题",
             trailing = { CountdownChip(state.daysLeft(), onClick = onOpenGoal) },
         )
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            // scope-bar
-            Row(
+        // §12.5：展开态（≥600dp）题卡限宽 620dp 居中，避免行长过长（原型 .fold-open .q-wrap）
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val wide = maxWidth >= 600.dp
+            Column(
                 Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Xb.surface)
-                    .border(1.dp, Xb.borderLight, RoundedCornerShape(14.dp))
-                    .clickable { pickerOpen = true }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .align(Alignment.TopCenter)
+                    .padding(horizontal = 16.dp)
+                    .then(if (wide) Modifier.widthIn(max = 620.dp) else Modifier)
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text("刷题范围 · 点击切换", color = Xb.mutedLight, fontSize = 11.sp)
-                    Text(
-                        state.quizScope,
-                        color = Xb.ink, fontSize = 13.5.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-                Box(
+                // scope-bar
+                Row(
                     Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(Xb.accentLight)
-                        .padding(horizontal = 9.dp, vertical = 3.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Xb.surface)
+                        .border(1.dp, Xb.borderLight, RoundedCornerShape(14.dp))
+                        .clickable { pickerOpen = true }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("$scopeCount 题", color = Xb.accentDeep, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    Column(Modifier.weight(1f)) {
+                        Text("刷题范围 · 点击切换", color = Xb.mutedLight, fontSize = 11.sp)
+                        Text(
+                            state.quizScope,
+                            color = Xb.ink, fontSize = 13.5.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .background(Xb.accentLight)
+                            .padding(horizontal = 9.dp, vertical = 3.dp)
+                    ) {
+                        Text("$scopeCount 题", color = Xb.accentDeep, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-            }
-            SrcHint("💡 题库 = AI 为每集笔记生成的习题。例如「第1集 软件架构概念」生成的习题，就是该集范围内的题目", Modifier.padding(top = 12.dp))
+                SrcHint("💡 题库 = AI 为每集笔记生成的习题。例如「第1集 软件架构概念」生成的习题，就是该集范围内的题目", Modifier.padding(top = 12.dp))
 
-            // q-progress
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (state.quizPool.isEmpty()) "第 0 题" else "第 ${state.quizIdx + 1} / ${state.quizPool.size} 题",
-                    color = Xb.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Badge("对 ${state.quizRight}", Xb.greenLight, Xb.green)
-                Spacer(Modifier.size(6.dp))
-                Badge("错 ${state.quizWrong}", Xb.redLight, Xb.red)
-            }
-
-            val q = state.currentQuestion()
-            if (q == null) {
-                Column(Modifier.fillMaxWidth().padding(vertical = 30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                // q-progress
+                Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "该范围暂无题目\n（AI 生成该集习题后即可刷题）",
-                        color = Xb.mutedLight, fontSize = 13.sp, lineHeight = 22.sp,
-                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                        if (state.quizPool.isEmpty()) "第 0 题" else "第 ${state.quizIdx + 1} / ${state.quizPool.size} 题",
+                        color = Xb.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
                     )
+                    Badge("对 ${state.quizRight}", Xb.greenLight, Xb.green)
+                    Spacer(Modifier.size(6.dp))
+                    Badge("错 ${state.quizWrong}", Xb.redLight, Xb.red)
                 }
-            } else {
-                QuizCard(state, q, onOpenGoal)
+
+                val q = state.currentQuestion()
+                if (q == null) {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "该范围暂无题目\n（AI 生成该集习题后即可刷题）",
+                            color = Xb.mutedLight, fontSize = 13.sp, lineHeight = 22.sp,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        )
+                    }
+                } else {
+                    QuizCard(state, q, onOpenGoal)
+                }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 

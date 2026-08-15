@@ -1,7 +1,9 @@
 package com.xueban.app
 
+import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.lifecycle.AndroidViewModel
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -552,9 +554,11 @@ class AppState(context: Context) {
     )
 }
 
-/** 应用级单例状态（进程级复用，token 持久化）。 */
-@Composable
-fun rememberAppState(): AppState {
-    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
-    return androidx.compose.runtime.remember { AppState(context) }
+/** §12.5：AppState 托管于 ViewModel，折叠 / 分屏切换（配置变更重建 Activity）时状态不丢失。 */
+class AppStateViewModel(application: Application) : AndroidViewModel(application) {
+    val state = AppState(application)
 }
+
+@Composable
+fun rememberAppState(): AppState =
+    androidx.lifecycle.viewmodel.compose.viewModel<AppStateViewModel>().state

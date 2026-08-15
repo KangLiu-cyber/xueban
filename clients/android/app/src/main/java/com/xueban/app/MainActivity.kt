@@ -22,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -74,11 +76,15 @@ fun XueBanApp() {
         if (!state.loggedIn) {
             LoginScreen(state, onEntered = {})
         } else {
+            // §12.5：movableContentOf 让页面的 remember 状态在折叠 / 展开分支间迁移而不重建。
+            val tabContent = remember {
+                movableContentOf { TabContent(state) }
+            }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 if (maxWidth < 600.dp) {
                     Column(Modifier.fillMaxSize()) {
                         Box(Modifier.weight(1f).fillMaxWidth()) {
-                            TabContent(state)
+                            tabContent()
                         }
                         NavigationBar(containerColor = Xb.surface) {
                             tabs.forEachIndexed { i, tab ->
@@ -104,7 +110,7 @@ fun XueBanApp() {
                             }
                         }
                         Box(Modifier.weight(1f).fillMaxSize()) {
-                            TabContent(state)
+                            tabContent()
                         }
                     }
                 }

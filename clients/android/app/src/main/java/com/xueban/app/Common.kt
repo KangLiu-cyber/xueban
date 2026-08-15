@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -300,46 +301,60 @@ fun XbSheet(
             .clickable(interactionSource = androidx.compose.foundation.interaction.MutableInteractionSource(),
                 indication = null, onClick = onDismiss)
     ) {
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                .background(Xb.surface)
-                .padding(bottom = 26.dp)
-        ) {
-            Box(
+        // §12.5：展开态（≥600dp）Sheet 由全宽变为 560dp 居中卡片（原型 .fold-open .sheet）
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val wide = maxWidth >= 600.dp
+            Column(
                 Modifier
-                    .padding(top = 9.dp)
-                    .size(width = 38.dp, height = 4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Xb.border)
-                    .align(Alignment.CenterHorizontally)
-            )
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .align(Alignment.BottomCenter)
+                    .then(
+                        if (wide) {
+                            Modifier
+                                .width(560.dp)
+                                .padding(bottom = 12.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                        }
+                    )
+                    .background(Xb.surface)
+                    .padding(bottom = 26.dp)
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(title, fontSize = 15.5.sp, fontWeight = FontWeight.Bold, color = Xb.ink)
-                    if (subtitle != null) {
-                        Text(subtitle, fontSize = 11.5.sp, color = Xb.mutedLight, modifier = Modifier.padding(top = 1.dp))
-                    }
-                }
                 Box(
                     Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Xb.surface2)
-                        .clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
+                        .padding(top = 9.dp)
+                        .size(width = 38.dp, height = 4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Xb.border)
+                        .align(Alignment.CenterHorizontally)
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("✕", color = Xb.muted, fontSize = 13.sp)
+                    Column(Modifier.weight(1f)) {
+                        Text(title, fontSize = 15.5.sp, fontWeight = FontWeight.Bold, color = Xb.ink)
+                        if (subtitle != null) {
+                            Text(subtitle, fontSize = 11.5.sp, color = Xb.mutedLight, modifier = Modifier.padding(top = 1.dp))
+                        }
+                    }
+                    Box(
+                        Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(Xb.surface2)
+                            .clickable(onClick = onDismiss),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("✕", color = Xb.muted, fontSize = 13.sp)
+                    }
                 }
+                content()
             }
-            content()
         }
     }
 }

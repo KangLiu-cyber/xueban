@@ -5,7 +5,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -46,72 +48,32 @@ fun AssemblyScreen(state: AppState, onOpenGoal: () -> Unit) {
         Column(Modifier.padding(horizontal = 16.dp)) {
             SrcHint("💡 组卷数据来自题库：AI 生成的习题 + 你的错题，按条件筛选组合成模拟试卷")
 
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Xb.surface)
-                    .border(1.dp, Xb.borderLight, RoundedCornerShape(14.dp))
-                    .padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 17.dp)
-            ) {
-                AsmSection("题目来源") {
-                    ChipRow(listOf("全部", "AI 生成题", "错题"), state.asmSource) {
-                        state.asmSource = it
-                    }
-                }
-                AsmSection("题型") {
-                    ChipRow(listOf("全部题型", "单选题", "多选题", "判断题"), state.asmType) {
-                        state.asmType = it
-                    }
-                }
-                AsmSection("范围") {
-                    val eps = allEps(deriveCourses(state.tree))
-                    ChipRow(listOf("全部集数") + eps.map { "第${it.second.no}集" }, state.asmScope) { label ->
-                        if (label == "全部集数") {
-                            state.asmScope = "全部集数"
-                            state.asmScopeId = null
-                        } else {
-                            val no = label.removePrefix("第").removeSuffix("集").toIntOrNull()
-                            val ep = eps.firstOrNull { it.second.no == no }?.second
-                            if (ep != null) {
-                                state.asmScope = "第${ep.no}集"
-                                state.asmScopeId = ep.nodeId
-                            }
+            // §12.5：展开态（≥600dp）组卷双列——左 来源/题型/范围，右 数量 + 操作（原型 .fold-open .asm-layout）
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth >= 600.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            AsmSourceCard(state)
+                            AsmTypeCard(state)
+                            AsmScopeCard(state)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            AsmCountCard(state)
+                            AsmButtons(state)
                         }
                     }
-                }
-                Text("题目数量（综合知识真题为 75 题）", color = Xb.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp, bottom = 10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StepperBtn("−") {
-                        state.asmCount = (state.asmCount - 5).coerceAtLeast(5)
-                    }
-                    Text(
-                        "${state.asmCount}",
-                        color = Xb.ink, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.width(74.dp),
-                    )
-                    Text("题", color = Xb.mutedLight, fontSize = 11.5.sp)
-                    StepperBtn("＋") {
-                        state.asmCount = (state.asmCount + 5).coerceAtMost(150)
+                } else {
+                    Column(Modifier.padding(top = 12.dp)) {
+                        AsmSourceCard(state)
+                        AsmTypeCard(state)
+                        AsmScopeCard(state)
+                        AsmCountCard(state)
+                        AsmButtons(state)
                     }
                 }
-            }
-
-            Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                XbButton("⚡ 自动补齐到 75 题", onClick = {
-                    state.asmCount = 75
-                    state.toast("已自动补齐到 75 题：AI 生成题优先，不足部分用错题补足")
-                }, modifier = Modifier.fillMaxWidth(), primary = false)
-                XbButton("👁 预览试卷", onClick = {
-                    state.assemble()
-                    if (state.previewPaper != null) state.previewSheet = true
-                }, modifier = Modifier.fillMaxWidth(), primary = false)
-                XbButton("🚀 开始模考", onClick = {
-                    state.assemble()
-                    state.previewPaper?.let { state.startMock(it) }
-                }, modifier = Modifier.fillMaxWidth())
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -126,6 +88,106 @@ fun AssemblyScreen(state: AppState, onOpenGoal: () -> Unit) {
 private fun AsmSection(title: String, content: @Composable () -> Unit) {
     Text(title, color = Xb.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp, top = 4.dp))
     content()
+}
+
+/** .asm-card：白底卡片 + 细边框（原型组卷页四个筛选卡片 + 操作区的公共容器）。 */
+@Composable
+private fun AsmCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Xb.surface)
+            .border(1.dp, Xb.borderLight, RoundedCornerShape(14.dp))
+            .padding(start = 15.dp, end = 15.dp, top = 15.dp, bottom = 17.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun AsmSourceCard(state: AppState) {
+    AsmCard {
+        AsmSection("题目来源") {
+            ChipRow(listOf("全部", "AI 生成题", "错题"), state.asmSource) {
+                state.asmSource = it
+            }
+        }
+    }
+}
+
+@Composable
+private fun AsmTypeCard(state: AppState) {
+    AsmCard {
+        AsmSection("题型") {
+            ChipRow(listOf("全部题型", "单选题", "多选题", "判断题"), state.asmType) {
+                state.asmType = it
+            }
+        }
+    }
+}
+
+@Composable
+private fun AsmScopeCard(state: AppState) {
+    AsmCard {
+        AsmSection("范围") {
+            val eps = allEps(deriveCourses(state.tree))
+            ChipRow(listOf("全部集数") + eps.map { "第${it.second.no}集" }, state.asmScope) { label ->
+                if (label == "全部集数") {
+                    state.asmScope = "全部集数"
+                    state.asmScopeId = null
+                } else {
+                    val no = label.removePrefix("第").removeSuffix("集").toIntOrNull()
+                    val ep = eps.firstOrNull { it.second.no == no }?.second
+                    if (ep != null) {
+                        state.asmScope = "第${ep.no}集"
+                        state.asmScopeId = ep.nodeId
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AsmCountCard(state: AppState) {
+    AsmCard {
+        AsmSection("题目数量（综合知识真题为 75 题）") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StepperBtn("−") {
+                    state.asmCount = (state.asmCount - 5).coerceAtLeast(5)
+                }
+                Text(
+                    "${state.asmCount}",
+                    color = Xb.ink, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(74.dp),
+                )
+                Text("题", color = Xb.mutedLight, fontSize = 11.5.sp)
+                StepperBtn("＋") {
+                    state.asmCount = (state.asmCount + 5).coerceAtMost(150)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AsmButtons(state: AppState) {
+    Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        XbButton("⚡ 自动补齐到 75 题", onClick = {
+            state.asmCount = 75
+            state.toast("已自动补齐到 75 题：AI 生成题优先，不足部分用错题补足")
+        }, modifier = Modifier.fillMaxWidth(), primary = false)
+        XbButton("👁 预览试卷", onClick = {
+            state.assemble()
+            if (state.previewPaper != null) state.previewSheet = true
+        }, modifier = Modifier.fillMaxWidth(), primary = false)
+        XbButton("🚀 开始模考", onClick = {
+            state.assemble()
+            state.previewPaper?.let { state.startMock(it) }
+        }, modifier = Modifier.fillMaxWidth())
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
