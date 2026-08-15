@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 服务端部署包：musl 静态二进制 + skills/ + 前端 web 产物 + deploy/ 编排，
-# 解压即部署源（docker compose -f deploy/docker-compose.yml up --build），
+# 服务端部署包：musl 静态二进制 + skills/ + 前端 web 产物 + deploy/ 编排 + scripts/ 启停脚本，
+# 解压即部署源（scripts/start.sh / scripts/stop.sh），
 # 文件名含版本号与 commit。CI（.github/workflows）上传为 Release 资产。
 # 前置：scripts/build-musl.sh（二进制）+ clients/web/dist（trunk build --release）。
 set -euo pipefail
@@ -25,7 +25,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/$name"
 cp -r deploy "$tmp/$name/deploy"
+cp -r scripts "$tmp/$name/scripts"
 cp -r skills "$tmp/$name/skills"
+mkdir -p "$tmp/$name/attachments"   # 附件可写挂载目录（空目录随包下发，start.sh 兜底创建）
 mkdir -p "$tmp/$name/target/x86_64-unknown-linux-musl/release"
 cp "$BIN" "$tmp/$name/target/x86_64-unknown-linux-musl/release/bootstrap"
 mkdir -p "$tmp/$name/clients/web"
@@ -35,4 +37,4 @@ mkdir -p dist
 tar -C "$tmp" -czf "dist/$name.tar.gz" "$name"
 
 echo "[package-server] 部署包：dist/$name.tar.gz"
-echo "[package-server] 部署：解压后 docker compose -f deploy/docker-compose.yml up -d --build"
+echo "[package-server] 部署：解压后 scripts/start.sh（停止 scripts/stop.sh）"

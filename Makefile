@@ -6,20 +6,23 @@
 #   make gate        提交门禁：fmt + clippy + test + check 全绿
 #   make build-musl  复现 CI：cross 交叉编译 musl 静态二进制
 #   make package     复现 CI：打服务端安装包（tar.gz）
+#   make start/stop  一键启动/停止部署（docker compose，见 scripts/start.sh）
 
 SHELL := /bin/bash
 
 DATABASE_URL ?= postgres://postgres@localhost/xueban?host=/tmp
 BIND_ADDR ?= 127.0.0.1:8080
 
-.PHONY: dev run web desktop gate check build-musl package
+.PHONY: dev run web desktop gate check build-musl package start stop
 
 ## 本地一键启动后端（连接串 / 监听地址可用环境变量覆盖）
 dev run:
 	DATABASE_URL="$(DATABASE_URL)" BIND_ADDR="$(BIND_ADDR)" cargo run -p bootstrap
 
 ## 启动前端开发服务器（trunk 编译 WASM + 热重载；缺 wasm target 时先跑
-## `rustup target add wasm32-unknown-unknown`，默认监听 127.0.0.1:8080）
+## `rustup target add wasm32-unknown-unknown`）。监听 127.0.0.1:8081，
+## /api/v1 由 trunk 代理到后端 8080（见 clients/web/Trunk.toml），
+## 可与 make dev 同时运行。
 web:
 	cd clients/web && trunk serve
 
@@ -45,3 +48,10 @@ build-musl:
 ## 复现 CI：打服务端安装包（tar.gz，含 skills/）
 package:
 	scripts/package-server.sh
+
+## 一键启动/停止部署（docker compose；start 缺产物自动补齐）
+start:
+	scripts/start.sh
+
+stop:
+	scripts/stop.sh

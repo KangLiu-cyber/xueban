@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{视频/集标题}} 笔记</title>
+<style>
+    :root {
+        --ink: #1f2937;
+        --ink2: #6b7280;
+        --line: #e5e7eb;
+        --accent: #2563eb;
+        --accent-soft: #eff6ff;
+        --bg: #ffffff;
+        --box: #f8fafc;
+        --star3: #b91c1c;
+        --star2: #b45309;
+        --star1: #1d4ed8;
+        --star0: #6b7280;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+        font-family:'Noto Sans CJK SC','PingFang SC','Microsoft YaHei',sans-serif;
+        background:var(--bg); color:var(--ink); line-height:1.8; font-size:15px;
+    }
+    .container { max-width:820px; margin:0 auto; padding:48px 32px 72px; }
+    .header { border-bottom:2px solid var(--ink); padding-bottom:16px; margin-bottom:28px; }
+    .header h1 { font-size:24px; font-weight:700; margin-bottom:6px; }
+    .header .sub { font-size:14px; color:var(--ink2); margin-bottom:10px; }
+    .header .meta { font-size:13px; color:var(--ink2); }
+    .header .meta span { margin-right:16px; }
+    .legend { font-size:13px; color:var(--ink2); margin-bottom:28px; padding:10px 14px; background:var(--box); border:1px solid var(--line); border-radius:6px; }
+    .legend span { margin-right:18px; }
+    .legend b { font-weight:700; }
+    .section { margin-bottom:32px; }
+    .section-title { font-size:17px; font-weight:700; color:var(--ink); padding-bottom:8px; margin-bottom:16px; border-bottom:1px solid var(--line); }
+    .mm { font-size:14px; }
+    .mm .root { font-weight:700; margin-bottom:8px; }
+    .mm .branch { margin-left:16px; padding-left:14px; border-left:1px solid var(--line); margin-bottom:8px; }
+    .mm .node { font-weight:600; margin-bottom:3px; }
+    .mm .leaf { margin-left:14px; color:var(--ink2); margin-bottom:2px; }
+    .mm .leaf b { color:var(--ink); font-weight:600; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:20px 22px; margin-bottom:16px; }
+    .card-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .card-head .stars { font-size:13px; font-weight:700; letter-spacing:1px; }
+    .card.l3 .stars { color:var(--star3); }
+    .card.l2 .stars { color:var(--star2); }
+    .card.l1 .stars { color:var(--star1); }
+    .card.l0 .stars { color:var(--star0); }
+    .card-head .title { font-size:17px; font-weight:700; }
+    .ts { font-size:12px; color:var(--ink2); font-variant-numeric:tabular-nums; }
+    .core { background:var(--accent-soft); border-left:3px solid var(--accent); padding:10px 14px; margin-bottom:12px; font-size:15px; font-weight:600; border-radius:0 4px 4px 0; }
+    .core::before { content:"核心："; color:var(--accent); font-weight:700; }
+    .points { margin-bottom:12px; }
+    .points ul { padding-left:20px; }
+    .points li { margin-bottom:4px; }
+    .points .hl { font-weight:700; border-bottom:1px solid var(--accent); }
+    .diagram { background:var(--box); border:1px solid var(--line); border-radius:6px; padding:16px; margin-bottom:12px; }
+    .diagram .cap { font-size:12px; color:var(--ink2); text-align:center; margin-bottom:12px; }
+    .vstack { display:flex; flex-direction:column; gap:2px; max-width:320px; margin:0 auto; }
+    .vstack .box { border:1px solid var(--ink2); background:#fff; padding:6px 12px; border-radius:4px; font-size:13px; text-align:center; }
+    .vstack .box.key { border-color:var(--accent); color:var(--accent); font-weight:600; }
+    .vstack .arrow { text-align:center; color:var(--ink2); font-size:12px; line-height:1.2; }
+    .hrow { display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+    .hrow .box { border:1px solid var(--ink2); background:#fff; padding:5px 10px; border-radius:4px; font-size:12px; }
+    .core-box { border:1px solid var(--accent); color:var(--accent); font-weight:600; padding:8px 18px; border-radius:4px; text-align:center; margin:0 auto 10px; max-width:200px; font-size:13px; }
+    .teacher { font-size:14px; color:var(--ink2); margin-bottom:8px; padding-left:12px; border-left:2px solid var(--line); }
+    .teacher::before { content:"老师："; color:var(--ink); font-weight:600; }
+    .memory { font-size:14px; color:var(--ink2); padding-left:12px; border-left:2px solid var(--line); }
+    .memory::before { content:"记忆："; color:var(--ink); font-weight:600; }
+    table { width:100%; border-collapse:collapse; font-size:14px; margin:8px 0; }
+    th { text-align:left; padding:8px 10px; border-bottom:2px solid var(--ink); font-weight:700; }
+    td { padding:8px 10px; border-bottom:1px solid var(--line); }
+    .cmp { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:10px 0; }
+    .cmp > div { border:1px solid var(--line); border-radius:6px; padding:10px 14px; font-size:13px; background:var(--box); }
+    .cmp h4 { font-size:13px; font-weight:700; margin-bottom:4px; }
+    .summary { border-top:2px solid var(--ink); padding-top:16px; margin-top:32px; }
+    .summary h2 { font-size:17px; margin-bottom:12px; }
+    .summary ul { list-style:none; }
+    .summary li { margin-bottom:6px; padding-left:18px; position:relative; font-size:14px; }
+    .summary li::before { content:"·"; position:absolute; left:4px; font-weight:700; }
+    @media (max-width:600px) { .cmp { grid-template-columns:1fr; } .container { padding:28px 18px; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+    <!-- ============================================================
+         【通用笔记模板 · 简洁版】
+         填写方法：复制 card 块，替换 {{占位符}}。
+         模块：
+         1. header   视频信息（标题/副标题/元信息）
+         2. legend   星级图例
+         3. section  本集框架（思维导图）
+         4. card     知识点卡片（可重复）
+              - stars/title/ts  星级+标题+时间戳（card 的 l0~l3 对应星级配色）
+              - core            一句话核心
+              - points          要点（hl=关键词下划线）
+              - diagram         图解（可选，vstack=纵向流程 hrow=横向并列 core-box=中心节点）
+              - cmp             左右对比框（可选）
+              - teacher         老师原话/批注
+              - memory          记忆技巧
+         5. 速记表    一行一句
+         6. 考点提示  老师口述出题信息
+         7. summary  本集核心速记
+    ============================================================ -->
+
+    <!-- 1. Header -->
+    <div class="header">
+        <h1>{{视频/集标题}}</h1>
+        <div class="sub">{{课程名称}}</div>
+        <div class="meta">
+            <span>视频：{{链接或BV号}}</span>
+            <span>时长：{{时长}}</span>
+            <span>来源：视频语音转写 + PPT画面截图</span>
+        </div>
+    </div>
+
+    <!-- 2. Legend -->
+    <div class="legend">
+        <span><b style="color:var(--star3)">★★★</b> 必须掌握</span>
+        <span><b style="color:var(--star2)">★★</b> 尽力掌握</span>
+        <span><b style="color:var(--star1)">★</b> 加深印象</span>
+        <span><b style="color:var(--star0)">了解</b> 听一遍即可</span>
+    </div>
+
+    <!-- 3. 本集框架 -->
+    <div class="section">
+        <div class="section-title">本集框架</div>
+        <div class="mm">
+            <div class="root">{{章节名}}</div>
+            <div class="branch">
+                <div class="node">{{主题1}}</div>
+                <div class="leaf"><b>{{知识点1.1}}</b> {{星级}}</div>
+                <div class="leaf"><b>{{知识点1.2}}</b> {{星级}}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. 知识点卡片（可重复，l0/l1/l2/l3 对应 了解/★/★★/★★★） -->
+    <div class="card l2">
+        <div class="card-head">
+            <span class="stars">★★</span>
+            <span class="title">{{知识点标题}}</span>
+            <span class="ts">{{00:00}}</span>
+        </div>
+        <div class="core">{{一句话核心}}</div>
+        <div class="points">
+            <ul>
+                <li>{{要点，关键词用 <span class="hl">下划线</span>}}</li>
+            </ul>
+        </div>
+        <div class="diagram">
+            <div class="cap">{{图解标题}}</div>
+            <div class="vstack">
+                <div class="box">{{层/组件1}}</div>
+                <div class="arrow">↓</div>
+                <div class="box key">{{层/组件2}}</div>
+            </div>
+        </div>
+        <div class="teacher">{{老师原话或批注，附时间戳}}</div>
+        <div class="memory">{{口诀/比喻/对比}}</div>
+    </div>
+
+    <!-- 5. 速记表 -->
+    <div class="section">
+        <div class="section-title">速记表</div>
+        <table>
+            <tr><th>#</th><th>知识点</th><th>星级</th><th>一句话记忆</th></tr>
+            <tr><td>1</td><td>{{知识点}}</td><td>{{★}}</td><td>{{一句话}}</td></tr>
+        </table>
+    </div>
+
+    <!-- 6. 考点提示 -->
+    <div class="section">
+        <div class="section-title">考点提示</div>
+        <div class="points">
+            <ul>
+                <li>{{老师口述的出题范围/分值/题型}}</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- 7. Summary -->
+    <div class="summary">
+        <h2>本集核心速记</h2>
+        <ul>
+            <li>{{核心知识点1}}</li>
+            <li>{{核心知识点2}}</li>
+        </ul>
+    </div>
+
+</div>
+</body>
+</html>

@@ -1,7 +1,7 @@
 //! Skill：系统内置 Skill 目录（文件资产）与用户自定义 Skill（持久化）。
 //!
 //! 内置 skill 放在仓库根 `skills/` 文件夹（一个子文件夹一个 skill，内含
-//! `skill.md`），后端启动时加载为 Skill 目录，直接编辑文件即可更新；
+//! `SKILL.md`），后端启动时加载为 Skill 目录，直接编辑文件即可更新；
 //! 用户自定义 skill 存 skills 表（按用户隔离）。bootstrap 能力下发时两者
 //! 合并（同名用户自定义覆盖内置），Agent 可按名经 get_skill 重新拉取。
 
@@ -29,7 +29,7 @@ pub struct UserSkill {
     pub created_at: DateTime<Utc>,
 }
 
-/// 解析单个 skill 文件（`skill.md`）。
+/// 解析单个 skill 文件（`SKILL.md`）。
 ///
 /// 可选 frontmatter（首行 `---` 至下一个 `---` 行，单行 `key: value` 字段：
 /// `name` / `description`）；frontmatter 之后的正文即脚本。name 缺省取文件名主干，
