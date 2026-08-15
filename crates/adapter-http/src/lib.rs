@@ -32,6 +32,7 @@ use application::space::SpaceService;
 use application::wrong::WrongService;
 use axum::Router;
 use axum::middleware as axum_mw;
+use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
@@ -121,6 +122,11 @@ impl AppState {
     }
 }
 
+/// 探针端点（§12 可观测）：容器 healthcheck / 反向代理探活用，无鉴权、无副作用。
+async fn healthz() -> impl IntoResponse {
+    axum::Json(serde_json::json!({ "status": "ok" }))
+}
+
 /// 组装 /api/v1 路由。公开路由（注册/登录/注销）与鉴权路由分开挂中间件，
 /// `.layer` 后调用者在外层：鉴权路由先限流（防认证风暴）再鉴权。
 pub fn router(state: AppState) -> Router {
@@ -179,6 +185,7 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .nest("/api/v1", public.merge(protected))
+        .route("/healthz", axum::routing::get(healthz))
         .layer(cors)
         .with_state(state)
 }
