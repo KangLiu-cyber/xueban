@@ -31,7 +31,7 @@ impl QuestionRepository for PgQuestionRepository {
             return Ok(Vec::new());
         }
         let mut qb = QueryBuilder::<sqlx::Postgres>::new(
-            "insert into questions (workspace_id, source_item_id, type, stem, options, answer, explanation) ",
+            "insert into questions (workspace_id, source_item_id, type, stem, options, answer, explanation) values ",
         );
         for (i, q) in questions.iter().enumerate() {
             if i > 0 {
