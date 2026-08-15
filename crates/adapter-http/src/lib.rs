@@ -153,6 +153,7 @@ pub fn router(state: AppState) -> Router {
         .route("/quiz/questions", get(quiz::draw))
         .route("/quiz/answer", post(quiz::answer))
         .route("/wrong", get(wrong::list))
+        .route("/wrong/stats", get(wrong::stats))
         .route("/wrong/:id/master", post(wrong::mark_mastered))
         .route("/papers", post(paper::assemble))
         .route("/papers/:id", get(paper::read))

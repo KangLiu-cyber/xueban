@@ -15,7 +15,7 @@ use domain::ports::{
     PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
     WorkspaceRepository, WrongItemRepository,
 };
-use domain::practice::{Paper, Question, QuestionType, QuizRecord, WrongItem};
+use domain::practice::{Paper, Question, QuestionType, QuizRecord, WrongItem, WrongStats};
 use domain::space::{Annotation, Item, ItemKind, ItemNode, Workspace};
 
 fn now() -> DateTime<Utc> {
@@ -439,6 +439,28 @@ impl WrongItemRepository for InMemoryWrongItemRepository {
             .collect();
         list.sort_by_key(|w| w.updated_at);
         Ok(list)
+    }
+
+    async fn stats(&self, user_id: i64, week_ago: DateTime<Utc>) -> domain::Result<WrongStats> {
+        let map = self.wrongs.lock().unwrap();
+        let mut stats = WrongStats {
+            total: 0,
+            weekly_new: 0,
+            mastered: 0,
+        };
+        for w in map.values() {
+            if w.user_id != user_id {
+                continue;
+            }
+            stats.total += 1;
+            if w.mastered {
+                stats.mastered += 1;
+            }
+            if w.updated_at >= week_ago {
+                stats.weekly_new += 1;
+            }
+        }
+        Ok(stats)
     }
 }
 

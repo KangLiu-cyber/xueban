@@ -21,6 +21,14 @@ pub async fn list(
     Ok(Json(state.wrong.list(auth.0.id).await?))
 }
 
+/// GET /api/v1/wrong/stats — 错题统计卡片（累计 / 近 7 天新增 / 已掌握）。
+pub async fn stats(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<domain::practice::WrongStats>, ApiError> {
+    Ok(Json(state.wrong.stats(auth.0.id).await?))
+}
+
 /// POST /api/v1/wrong/:id/master
 pub async fn mark_mastered(
     State(state): State<AppState>,

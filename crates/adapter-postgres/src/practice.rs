@@ -9,7 +9,7 @@ use domain::error::{Error, Result};
 use domain::ports::{
     PaperRepository, QuestionRepository, QuizRecordRepository, WrongItemRepository,
 };
-use domain::practice::{Paper, Question, QuestionType, QuizRecord, WrongItem};
+use domain::practice::{Paper, Question, QuestionType, QuizRecord, WrongItem, WrongStats};
 use sqlx::postgres::PgRow;
 use sqlx::{PgPool, QueryBuilder, Row};
 
@@ -266,6 +266,27 @@ impl WrongItemRepository for PgWrongItemRepository {
         .await
         .map_err(map_sqlx_error)?;
         rows.iter().map(wrong_item_from_row).collect()
+    }
+
+    async fn stats(&self, user_id: i64, week_ago: DateTime<Utc>) -> Result<WrongStats> {
+        let row = sqlx::query(
+            "select count(*) as total,
+                    count(*) filter (where mastered) as mastered,
+                    count(*) filter (where updated_at >= $2) as weekly_new
+             from wrong_items where user_id = $1",
+        )
+        .bind(user_id)
+        .bind(week_ago)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        Ok(WrongStats {
+            total: row.try_get::<i64, _>("total").map_err(map_sqlx_error)? as u32,
+            mastered: row.try_get::<i64, _>("mastered").map_err(map_sqlx_error)? as u32,
+            weekly_new: row
+                .try_get::<i64, _>("weekly_new")
+                .map_err(map_sqlx_error)? as u32,
+        })
     }
 }
 

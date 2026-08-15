@@ -10,7 +10,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use domain::error::{Error, Result};
 use domain::ports::{QuestionRepository, WrongItemRepository};
-use domain::practice::WrongItem;
+use domain::practice::{WrongItem, WrongStats};
 use serde::{Deserialize, Serialize};
 
 use crate::quiz::QuestionBrief;
@@ -74,6 +74,12 @@ where
             .next()
             .ok_or_else(|| Error::NotFound("题目不存在".to_owned()))?;
         Ok(QuestionBrief::from(q))
+    }
+
+    /// WrongStats：错题统计卡片（累计 / 近 7 天新增 / 已掌握）。
+    pub async fn stats(&self, user_id: i64) -> Result<WrongStats> {
+        let week_ago = Utc::now() - chrono::Duration::days(7);
+        self.wrongs.stats(user_id, week_ago).await
     }
 
     /// MarkMastered：显式标记掌握；错题不存在报 NotFound。
@@ -151,6 +157,29 @@ mod tests {
         );
         // 不是错题 → NotFound。
         assert!(matches!(s.redo(1, 999).await, Err(Error::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn stats_counts_total_weekly_and_mastered() {
+        let (s, qid) = svc().await;
+        let other = s.wrongs.record_mistake(1, 777, Utc::now()).await.unwrap();
+        assert!(!other.mastered);
+        // 已掌握 1 道；weekly_new 随 now 计入（updated_at 均在 7 天窗口内）。
+        s.mark_mastered(1, qid).await.unwrap();
+        let stats = s.stats(1).await.unwrap();
+        assert_eq!(stats.total, 2);
+        assert_eq!(stats.mastered, 1);
+        assert_eq!(stats.weekly_new, 2);
+        // 隔离：他人错题不计入。
+        s.wrongs.record_mistake(2, qid, Utc::now()).await.unwrap();
+        let stats = s.stats(1).await.unwrap();
+        assert_eq!(stats.total, 2);
+        // 早期错题不计入 weekly_new。
+        let stale = Utc::now() - chrono::Duration::days(30);
+        let _ = s.wrongs.record_mistake(1, 888, stale).await.unwrap();
+        let stats = s.stats(1).await.unwrap();
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.weekly_new, 2);
     }
 
     #[tokio::test]

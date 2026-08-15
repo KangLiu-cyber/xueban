@@ -14,7 +14,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use crate::error::Result;
 use crate::event::Event;
 use crate::identity::{Token, TokenPurpose, User};
-use crate::practice::{Paper, PaperConfig, Question, QuestionType, QuizRecord, WrongItem};
+use crate::practice::{
+    Paper, PaperConfig, Question, QuestionType, QuizRecord, WrongItem, WrongStats,
+};
 use crate::space::{Annotation, AnnotationAuthor, Item, ItemNode, Workspace};
 
 pub trait UserRepository {
@@ -119,6 +121,9 @@ pub trait WrongItemRepository {
     ) -> Result<bool>;
     /// 未掌握错题列表。
     async fn list_unmastered(&self, user_id: i64) -> Result<Vec<WrongItem>>;
+    /// 错题统计：累计错题数 / 近 7 天新增 / 已掌握（错题本统计卡片）。
+    /// 表中无 created_at，近 7 天新增按 `updated_at` 落在 7 天窗口内近似。
+    async fn stats(&self, user_id: i64, week_ago: DateTime<Utc>) -> Result<WrongStats>;
 }
 
 pub trait PaperRepository {

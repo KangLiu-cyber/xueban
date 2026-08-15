@@ -87,6 +87,15 @@ impl Question {
     }
 }
 
+/// 错题统计（错题本统计卡片）：累计错题数 / 近 7 天新增 / 已掌握。
+/// 近 7 天新增按更新时间窗口近似（表无 created_at 列）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WrongStats {
+    pub total: u32,
+    pub weekly_new: u32,
+    pub mastered: u32,
+}
+
 /// 错题聚合：同一题错多次记 times；用户显式标记 mastered。
 /// 不变式：答错则 times += 1 且 mastered = false；重做答对不自动清除错题。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

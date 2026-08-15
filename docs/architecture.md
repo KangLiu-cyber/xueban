@@ -349,6 +349,7 @@ events (
 | 刷题 | `GET /api/quiz/questions?scope=` | DrawQuestions |
 | 刷题 | `POST /api/quiz/answer` | SubmitAnswer |
 | 错题 | `GET /api/wrong` | ListWrong |
+| 错题 | `GET /api/wrong/stats` | WrongStats（累计/近 7 天新增/已掌握，错题本统计卡片） |
 | 错题 | `POST /api/wrong/:id/master` | MarkMastered |
 | 组卷 | `POST /api/papers` | AssemblePaper |
 | 组卷 | `GET /api/papers/:id` | ReadPaper |
