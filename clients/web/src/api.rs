@@ -1,11 +1,29 @@
 //! /api/v1 类型化客户端。全部请求经 gloo-net 发出；401 触发会话失效回调。
 //! 与 crates/adapter-http 各 handler 的 wire shape 一一对应（docs/requirements.md §API）。
+//!
+//! API 基址解析（`base_url`）：
+//! 1. 构建期环境变量 `XUEBAN_API_BASE`（web/desktop 部署时注入域名地址）；
+//! 2. 浏览器运行期同源兜底 `location.origin + /api/v1`（§11 Caddy 同域反代）；
+//! 3. 均不可用时退回本地开发地址。
 
 use chrono::{DateTime, NaiveDate, Utc};
 use gloo_net::http::{Method, Request};
 use serde::{Deserialize, Serialize};
 
-pub const BASE_URL: &str = "http://127.0.0.1:8080/api/v1";
+pub fn base_url() -> String {
+    if let Some(u) = option_env!("XUEBAN_API_BASE") {
+        return u.trim_end_matches('/').to_owned();
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(origin) = web_sys::window().and_then(|w| w.location().origin().ok()) {
+            if origin.starts_with("http://") || origin.starts_with("https://") {
+                return format!("{}/api/v1", origin.trim_end_matches('/'));
+            }
+        }
+    }
+    "http://127.0.0.1:8080/api/v1".to_owned()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterRequest {
@@ -311,7 +329,7 @@ async fn parse_error(text: &str) -> ApiError {
 }
 
 async fn send(method: &str, path: &str, body: Option<&str>, with_token: bool) -> ApiResult<String> {
-    let url = format!("{}{}", BASE_URL, path);
+    let url = format!("{}{}", base_url(), path);
     let m = match method {
         "GET" => Method::GET,
         "POST" => Method::POST,

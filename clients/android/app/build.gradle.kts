@@ -5,6 +5,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// API 基址：真机/发布构建经 -PapiBaseUrl=https://... 或 gradle.properties 注入；
+// 默认指向 Android 模拟器访问宿主机的回环地址。
+val apiBaseUrl: String = (project.findProperty("apiBaseUrl") as String?)
+    ?: "http://10.0.2.2:8080/api/v1"
+
 android {
     namespace = "com.xueban.app"
     compileSdk = 35
@@ -15,6 +20,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     buildTypes {
@@ -38,6 +44,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

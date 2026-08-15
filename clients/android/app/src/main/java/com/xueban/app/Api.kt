@@ -19,8 +19,9 @@ import java.util.concurrent.TimeUnit
  * （single→数字、multi→索引数组、judge→布尔）。
  */
 object Api {
-    // Android 模拟器经 10.0.2.2 访问宿主机后端；真机请改为局域网地址。
-    const val BASE_URL = "http://10.0.2.2:8080/api/v1"
+    // 基址来自 BuildConfig.API_BASE_URL（gradle 属性 apiBaseUrl 注入，见 app/build.gradle.kts）；
+    // 默认指向 Android 模拟器访问宿主机的回环地址。
+    val BASE_URL: String = BuildConfig.API_BASE_URL
 
     val json = Json {
         ignoreUnknownKeys = true
