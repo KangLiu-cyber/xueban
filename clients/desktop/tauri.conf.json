@@ -5,8 +5,8 @@
   "identifier": "com.xueban.desktop",
   "build": {
     "frontendDist": "../web/dist",
-    "beforeDevCommand": "cd ../web && trunk serve",
-    "beforeBuildCommand": "cd ../web && trunk build --release"
+    "beforeDevCommand": "cd web && trunk serve",
+    "beforeBuildCommand": "cd web && trunk build --release"
   },
   "app": {
     "windows": [
