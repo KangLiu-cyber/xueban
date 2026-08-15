@@ -119,6 +119,13 @@ pub trait WrongItemRepository {
         question_id: i64,
         now: DateTime<Utc>,
     ) -> Result<bool>;
+    /// 取消掌握（标记未掌握），供「取消」按钮使用。
+    async fn unmark_mastered(
+        &self,
+        user_id: i64,
+        question_id: i64,
+        now: DateTime<Utc>,
+    ) -> Result<bool>;
     /// 未掌握错题列表。
     async fn list_unmastered(&self, user_id: i64) -> Result<Vec<WrongItem>>;
     /// 错题统计：累计错题数 / 近 7 天新增 / 已掌握（错题本统计卡片）。

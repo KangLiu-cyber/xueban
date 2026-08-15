@@ -428,6 +428,22 @@ impl WrongItemRepository for InMemoryWrongItemRepository {
         }
     }
 
+    async fn unmark_mastered(
+        &self,
+        user_id: i64,
+        question_id: i64,
+        ts: DateTime<Utc>,
+    ) -> domain::Result<bool> {
+        let mut map = self.wrongs.lock().unwrap();
+        match map.get_mut(&(user_id, question_id)) {
+            Some(w) => {
+                w.unmark_mastered(ts);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
     async fn list_unmastered(&self, user_id: i64) -> domain::Result<Vec<WrongItem>> {
         let mut list: Vec<WrongItem> = self
             .wrongs

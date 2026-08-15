@@ -130,8 +130,12 @@ object Api {
 
     fun wrongStats(): WrongStats = get("/wrong/stats")
 
-    fun markMastered(wrongItemId: Long) {
-        postVoid("/wrong/$wrongItemId/master")
+    fun markMastered(questionId: Long) {
+        postVoid("/wrong/$questionId/master")
+    }
+
+    fun unmarkMastered(questionId: Long) {
+        postVoid("/wrong/$questionId/unmaster")
     }
 
     // ---- 组卷 ----

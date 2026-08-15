@@ -1,4 +1,4 @@
-//! 错题本用例：ListWrong / RedoWrong / MarkMastered。
+//! 错题本用例：ListWrong / RedoWrong / MarkMastered / UnmarkMastered。
 //!
 //! 错题由刷题/模考答错自动归集；重做只针对单题，不产生新的刷题会话；
 //! 重做答对不自动清除错题，掌握只能由用户显式标记。
@@ -94,6 +94,19 @@ where
             Err(Error::NotFound("错题不存在".to_owned()))
         }
     }
+
+    /// UnmarkMastered：取消掌握；错题不存在报 NotFound。
+    pub async fn unmark_mastered(&self, user_id: i64, question_id: i64) -> Result<()> {
+        let hit = self
+            .wrongs
+            .unmark_mastered(user_id, question_id, Utc::now())
+            .await?;
+        if hit {
+            Ok(())
+        } else {
+            Err(Error::NotFound("错题不存在".to_owned()))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -142,6 +155,16 @@ mod tests {
         );
         s.mark_mastered(1, qid).await.unwrap();
         assert!(s.list(1).await.unwrap().is_empty());
+        // 取消掌握 → 回到列表，mastered 复位。
+        s.unmark_mastered(1, qid).await.unwrap();
+        let list = s.list(1).await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(!list[0].wrong.mastered);
+        // 不存在的错题 → NotFound。
+        assert!(matches!(
+            s.unmark_mastered(1, 999).await,
+            Err(Error::NotFound(_))
+        ));
     }
 
     #[tokio::test]

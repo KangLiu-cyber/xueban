@@ -155,6 +155,7 @@ pub fn router(state: AppState) -> Router {
         .route("/wrong", get(wrong::list))
         .route("/wrong/stats", get(wrong::stats))
         .route("/wrong/{id}/master", post(wrong::mark_mastered))
+        .route("/wrong/{id}/unmaster", post(wrong::unmark_mastered))
         .route("/papers", post(paper::assemble))
         .route("/papers/{id}", get(paper::read))
         .route("/papers/{id}/submit", post(paper::submit))

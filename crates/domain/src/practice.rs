@@ -119,6 +119,11 @@ impl WrongItem {
         self.mastered = true;
         self.updated_at = now;
     }
+
+    pub fn unmark_mastered(&mut self, now: DateTime<Utc>) {
+        self.mastered = false;
+        self.updated_at = now;
+    }
 }
 
 /// 单次作答记录（只追加，不修改）。

@@ -255,6 +255,25 @@ impl WrongItemRepository for PgWrongItemRepository {
         Ok(result.rows_affected() > 0)
     }
 
+    async fn unmark_mastered(
+        &self,
+        user_id: i64,
+        question_id: i64,
+        now: DateTime<Utc>,
+    ) -> Result<bool> {
+        let result = sqlx::query(
+            "update wrong_items set mastered = false, updated_at = $3
+             where user_id = $1 and question_id = $2",
+        )
+        .bind(user_id)
+        .bind(question_id)
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        Ok(result.rows_affected() > 0)
+    }
+
     async fn list_unmastered(&self, user_id: i64) -> Result<Vec<WrongItem>> {
         let rows = sqlx::query(
             "select id, user_id, question_id, times, mastered, updated_at

@@ -29,13 +29,25 @@ pub async fn stats(
     Ok(Json(state.wrong.stats(auth.0.id).await?))
 }
 
-/// POST /api/v1/wrong/:id/master
+/// POST /api/v1/wrong/:id/master — :id 语义为 question_id（P0-3）。
 pub async fn mark_mastered(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Response {
     match state.wrong.mark_mastered(auth.0.id, id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => ApiError::from(e).into_response(),
+    }
+}
+
+/// POST /api/v1/wrong/:id/unmaster — 取消掌握；:id 语义同 mark_mastered。
+pub async fn unmark_mastered(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<i64>,
+) -> Response {
+    match state.wrong.unmark_mastered(auth.0.id, id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => ApiError::from(e).into_response(),
     }

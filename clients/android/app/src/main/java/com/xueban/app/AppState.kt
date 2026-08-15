@@ -375,7 +375,11 @@ class AppState(context: Context) {
         val item = wrongList.getOrNull(index) ?: return
         val next = !item.wrong.mastered
         // P0-3：后端按 question_id 定位错题，传题目 id 而非 wrong.id
-        guard("操作失败") { Api.markMastered(item.wrong.questionId) }
+        // P1-9：取消掌握走 unmaster 端点，按钮双向可用
+        guard("操作失败") {
+            if (next) Api.markMastered(item.wrong.questionId)
+            else Api.unmarkMastered(item.wrong.questionId)
+        }
         val updated = wrongList.toMutableList()
         updated[index] = item.copy(wrong = item.wrong.copy(mastered = next))
         wrongList = updated
