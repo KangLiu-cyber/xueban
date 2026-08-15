@@ -4,79 +4,164 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            XueBanApp()
+            XueBanTheme {
+                XueBanApp()
+            }
         }
     }
 }
 
-private val pages = listOf("学习空间", "刷题", "错题本", "组卷", "复盘")
+private data class NavTab(val emoji: String, val label: String)
+
+private val tabs = listOf(
+    NavTab("📖", "笔记"),
+    NavTab("✍️", "刷题"),
+    NavTab("🩹", "错题本"),
+    NavTab("📜", "组卷"),
+    NavTab("👤", "我的"),
+)
 
 @Composable
 fun XueBanApp() {
-    MaterialTheme {
-        var selected by rememberSaveable { mutableIntStateOf(0) }
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            if (maxWidth < 600.dp) {
-                // 折叠屏窄态：底部导航单栏
-                Scaffold(
-                    bottomBar = {
-                        NavigationBar {
-                            pages.forEachIndexed { i, page ->
+    val state = rememberAppState()
+
+    // 登录后首次进入：自动弹出 Agent 接入
+    LaunchedEffect(state.freshEnter) {
+        if (state.freshEnter) {
+            delay(700)
+            state.agentSheetOpen = true
+            state.freshEnter = false
+        }
+    }
+    // Toast 自动消失
+    LaunchedEffect(state.toastMsg) {
+        val msg = state.toastMsg ?: return@LaunchedEffect
+        delay(2200)
+        if (state.toastMsg == msg) state.toastMsg = null
+    }
+
+    Box(Modifier.fillMaxSize().background(Xb.bg)) {
+        if (!state.loggedIn) {
+            LoginScreen(state, onEntered = {})
+        } else {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                if (maxWidth < 600.dp) {
+                    Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            TabContent(state)
+                        }
+                        NavigationBar(containerColor = Xb.surface) {
+                            tabs.forEachIndexed { i, tab ->
                                 NavigationBarItem(
-                                    selected = i == selected,
-                                    onClick = { selected = i },
-                                    icon = {},
-                                    label = { Text(page) }
+                                    selected = state.tab == i,
+                                    onClick = { state.tab = i },
+                                    icon = { Text(tab.emoji, fontSize = 17.sp) },
+                                    label = { Text(tab.label, fontSize = 10.5.sp, fontWeight = FontWeight.Medium) },
                                 )
                             }
                         }
                     }
-                ) { innerPadding ->
-                    Text(
-                        "待实现：${pages[selected]}",
-                        Modifier.fillMaxSize().padding(innerPadding).padding(16.dp)
-                    )
-                }
-            } else {
-                // 宽态（≥600dp）：侧边导航双栏
-                Row(Modifier.fillMaxSize()) {
-                    NavigationRail {
-                        pages.forEachIndexed { i, page ->
-                            NavigationRailItem(
-                                selected = i == selected,
-                                onClick = { selected = i },
-                                icon = {},
-                                label = { Text(page) }
-                            )
+                } else {
+                    Row(Modifier.fillMaxSize()) {
+                        NavigationRail(containerColor = Xb.surface) {
+                            tabs.forEachIndexed { i, tab ->
+                                NavigationRailItem(
+                                    selected = state.tab == i,
+                                    onClick = { state.tab = i },
+                                    icon = { Text(tab.emoji, fontSize = 18.sp) },
+                                    label = { Text(tab.label, fontSize = 11.sp, fontWeight = FontWeight.Medium) },
+                                )
+                            }
+                        }
+                        Box(Modifier.weight(1f).fillMaxSize()) {
+                            TabContent(state)
                         }
                     }
-                    Text("待实现：${pages[selected]}", Modifier.padding(16.dp))
                 }
             }
         }
+
+        // 全屏覆盖：模考 / 错题重做
+        if (state.mockPaper != null) {
+            MockScreen(state, onFinish = {})
+        }
+        if (state.redoIdx >= 0 && state.mockPaper == null) {
+            RedoOverlay(state, onClose = { state.redoIdx = -1 })
+        }
+
+        // Sheets
+        if (state.goalSheet) GoalSheet(state)
+        if (state.annoSheet) AnnoSheet(state)
+        if (state.annoDetail != null) AnnoDetailSheet(state)
+        if (state.previewSheet && state.mockPaper == null) {
+            PreviewSheet(state = state, onStartMock = { state.startMock(state.previewPaper!!) })
+        }
+        if (state.resultSheet && state.mockPaper == null) {
+            ResultSheet(state, onGoWrong = { state.tab = 2 })
+        }
+        if (state.agentSheetOpen) AgentSheet(state, onDismiss = {
+            state.agentSheetOpen = false
+            state.toast("随时可在「我的 → Agent 接入凭证」重新打开")
+        })
+
+        if (state.confirmLogout) {
+            AlertDialog(
+                onDismissRequest = { state.confirmLogout = false },
+                title = { Text("退出登录", fontWeight = FontWeight.Bold) },
+                text = { Text("确定退出当前账号吗？退出后将回到登录页。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        state.confirmLogout = false
+                        state.logout()
+                    }) { Text("确定退出", color = Xb.red) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { state.confirmLogout = false }) { Text("取消", color = Xb.muted) }
+                },
+            )
+        }
+
+        ToastHost(state.toastMsg)
+    }
+}
+
+@Composable
+private fun TabContent(state: AppState) {
+    when (state.tab) {
+        0 -> NotesScreen(state, onTabToMe = { state.tab = 4 })
+        1 -> QuizScreen(state, onOpenGoal = { state.goalSheet = true })
+        2 -> WrongScreen(state)
+        3 -> AssemblyScreen(state, onOpenGoal = { state.goalSheet = true })
+        else -> MeScreen(state, onOpenGoal = { state.goalSheet = true })
     }
 }
