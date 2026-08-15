@@ -344,6 +344,7 @@ events (
 | 空间 | `PUT /api/v1/workspaces/:id` | ManageExamGoal（更新目标/日期） |
 | 内容 | `GET /api/v1/workspaces/:id/tree` | BrowseTree |
 | 内容 | `GET /api/v1/items/:id` | ReadNote |
+| 内容 | `DELETE /api/v1/items/:id` | ManageContent（删除，级联子树/批注/归属题目） |
 | 批注 | `POST /api/v1/items/:id/annotations` | Annotate |
 | 批注 | `DELETE /api/v1/annotations/:id` | Annotate（删除） |
 | 刷题 | `GET /api/v1/quiz/questions?scope=` | DrawQuestions |

@@ -226,6 +226,21 @@ impl ItemRepository for PgItemRepository {
         chain.reverse();
         Ok(chain)
     }
+
+    // 删除节点：SQL 层 join workspaces 限定归属（第二道防线），
+    // 级联（子树/批注/归属题目）由 0002 迁移的 ON DELETE CASCADE 承担。
+    async fn delete(&self, id: i64, user_id: i64) -> Result<bool> {
+        let result = sqlx::query(
+            "delete from items i using workspaces w
+             where i.id = $1 and w.id = i.workspace_id and w.user_id = $2",
+        )
+        .bind(id)
+        .bind(user_id)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 fn item_from_row(row: &PgRow) -> Result<Item> {

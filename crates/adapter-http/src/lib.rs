@@ -140,7 +140,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/workspaces/{id}", put(space::update_workspace))
         .route("/workspaces/{id}/tree", get(space::tree))
-        .route("/items/{id}", get(space::read_item))
+        .route(
+            "/items/{id}",
+            get(space::read_item).delete(space::delete_item),
+        )
         .route("/items/{id}/annotations", post(space::add_annotation))
         .route("/annotations/{id}", delete(space::delete_annotation))
         .route("/quiz/questions", get(quiz::draw))

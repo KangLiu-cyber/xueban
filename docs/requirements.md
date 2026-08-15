@@ -152,6 +152,7 @@ Agent 读取事件 → 复盘诊断 → 生成补充内容写回系统
 | events | id, user_id, item_id, action（annotate/answer/reveal/wrong）, payload, created_at |
 
 - kind：note（笔记）/ quiz（习题），可扩展新类型。
+- items 删除级联：删除目录/笔记时，其子树、批注与归属习题一并删除（`DELETE /api/v1/items/:id`）。
 - 存储自由创建；**UI 呈现方式不与存储结构绑定，UI/UX 另行设计**（已定 v3 柔和版）。
 
 ## 九、MCP 接口

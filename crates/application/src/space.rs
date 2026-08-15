@@ -289,6 +289,18 @@ where
         }
     }
 
+    /// 删除目录/笔记：先经 ReadNote 归属校验，再删除。
+    /// 级联行为（子树/批注/归属题目）由存储层承担（SQL ON DELETE CASCADE）。
+    pub async fn delete_item(&self, user_id: i64, item_id: i64) -> Result<()> {
+        self.read_item(user_id, item_id).await?;
+        let hit = self.items.delete(item_id, user_id).await?;
+        if hit {
+            Ok(())
+        } else {
+            Err(Error::NotFound("内容不存在".to_owned()))
+        }
+    }
+
     /// 列某笔记的批注（先校验笔记归属）。
     pub async fn list_annotations(&self, user_id: i64, item_id: i64) -> Result<Vec<Annotation>> {
         self.read_item(user_id, item_id).await?;
@@ -627,5 +639,84 @@ mod tests {
             .await
             .unwrap();
         assert!(s.list_annotations(2, note.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_item_removes_note_and_subtree() {
+        let s = svc();
+        let ws = s
+            .create_workspace(1, "备考".into(), "目标".into(), None)
+            .await
+            .unwrap();
+        let dir = s
+            .create_item(1, ws.id, None, ItemKind::Dir, "第1集".into(), None)
+            .await
+            .unwrap();
+        let note = s
+            .create_item(
+                1,
+                ws.id,
+                Some(dir.id),
+                ItemKind::Note,
+                "笔记".into(),
+                Some("正文".into()),
+            )
+            .await
+            .unwrap();
+        let ann = s
+            .annotate(
+                1,
+                note.id,
+                "正文".into(),
+                "考点".into(),
+                AnnotationAuthor::Ai,
+            )
+            .await
+            .unwrap();
+        // 删除笔记：笔记与其批注一并消失。
+        s.delete_item(1, note.id).await.unwrap();
+        assert!(matches!(
+            s.read_item(1, note.id).await,
+            Err(Error::NotFound(_))
+        ));
+        assert!(s.list_annotations(1, ann.item_id).await.is_err());
+        // 删除目录：整棵子树消失。
+        s.delete_item(1, dir.id).await.unwrap();
+        assert!(matches!(
+            s.read_item(1, dir.id).await,
+            Err(Error::NotFound(_))
+        ));
+        assert!(s.tree(1, ws.id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_item_rejects_foreign_and_unknown() {
+        let s = svc();
+        let ws = s
+            .create_workspace(1, "备考".into(), "目标".into(), None)
+            .await
+            .unwrap();
+        let note = s
+            .create_item(
+                1,
+                ws.id,
+                None,
+                ItemKind::Note,
+                "笔记".into(),
+                Some("x".into()),
+            )
+            .await
+            .unwrap();
+        // 他人不可删。
+        assert!(matches!(
+            s.delete_item(2, note.id).await,
+            Err(Error::NotFound(_))
+        ));
+        assert!(s.read_item(1, note.id).await.is_ok());
+        // 不存在的节点。
+        assert!(matches!(
+            s.delete_item(1, 999).await,
+            Err(Error::NotFound(_))
+        ));
     }
 }

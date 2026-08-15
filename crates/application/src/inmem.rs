@@ -264,6 +264,30 @@ impl ItemRepository for InMemoryItemRepository {
         chain.reverse();
         Ok(chain)
     }
+
+    // 模拟 SQL ON DELETE CASCADE 的子树级联：BFS 收集全部后代一并删除。
+    // 归属校验由应用层 read_item 完成（与 Pg 实现 SQL join 的防线等价）。
+    async fn delete(&self, id: i64, _user_id: i64) -> domain::Result<bool> {
+        let mut map = self.items.lock().unwrap();
+        if !map.contains_key(&id) {
+            return Ok(false);
+        }
+        let mut doomed = vec![id];
+        let mut i = 0;
+        while i < doomed.len() {
+            let parent = doomed[i];
+            doomed.extend(
+                map.values()
+                    .filter(|item| item.parent_id == Some(parent))
+                    .map(|item| item.id),
+            );
+            i += 1;
+        }
+        for item_id in doomed {
+            map.remove(&item_id);
+        }
+        Ok(true)
+    }
 }
 
 #[derive(Default)]

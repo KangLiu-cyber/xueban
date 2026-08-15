@@ -124,3 +124,15 @@ pub async fn delete_annotation(
         Err(e) => ApiError::from(e).into_response(),
     }
 }
+
+/// DELETE /api/v1/items/:id —— 删除目录/笔记，级联子树/批注/归属题目。
+pub async fn delete_item(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<i64>,
+) -> Response {
+    match state.space.delete_item(auth.0.id, id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => ApiError::from(e).into_response(),
+    }
+}

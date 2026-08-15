@@ -74,6 +74,9 @@ pub trait ItemRepository {
     async fn list_tree(&self, workspace_id: i64, user_id: i64) -> Result<Vec<ItemNode>>;
     /// 取某节点的祖先链（从根到自身，含自身），防环校验用。
     async fn ancestors(&self, item_id: i64) -> Result<Vec<i64>>;
+    /// 删除节点（须带归属校验：item 属于 user）。级联行为（子树/批注/
+    /// 归属题目）由存储实现承担（SQL 层 ON DELETE CASCADE 或等价模拟）。
+    async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
 }
 
 #[async_trait]
