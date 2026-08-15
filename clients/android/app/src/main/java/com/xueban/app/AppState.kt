@@ -9,6 +9,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -106,8 +111,12 @@ class AppState(context: Context) {
     var goalInput by mutableStateOf("")
     var dateInput by mutableStateOf("2026-11-07")
 
+    /** §12.6：Room 缓存读写跑在 IO 协程，避免主线程访问数据库。 */
+    private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     init {
         Api.authToken = token
+        CacheStore.init(context)
     }
 
     // ==================== 通用 ====================
@@ -142,6 +151,25 @@ class AppState(context: Context) {
         quizPool = emptyList()
         mockPaper = null
         tab = 0
+    }
+
+    /** §12.6：网络失败降级——异步读 Room 缓存，仅当当前列表为空时应用（避免旧缓存覆盖新数据）。 */
+    private inline fun <reified T> cacheFallback(
+        key: String,
+        noinline empty: () -> Boolean,
+        crossinline apply: (T) -> Unit,
+        hint: String,
+    ) {
+        if (token == null) return
+        cacheScope.launch {
+            val cached = CacheStore.get<T>(key)
+            withContext(Dispatchers.Main) {
+                if (cached != null && empty()) {
+                    apply(cached)
+                    toast(hint)
+                }
+            }
+        }
     }
 
     fun logout() {
@@ -192,7 +220,18 @@ class AppState(context: Context) {
 
     fun loadTree() {
         val ws = workspace ?: return
-        guard("加载目录失败") { Api.tree(ws.id) }?.let { tree = it }
+        val fresh = guard("加载目录失败") { Api.tree(ws.id) }
+        if (fresh != null) {
+            tree = fresh
+            cacheScope.launch { CacheStore.put("tree:${ws.id}", fresh) }
+        } else {
+            cacheFallback<List<ItemNode>>(
+                "tree:${ws.id}",
+                empty = { tree.isEmpty() },
+                apply = { tree = it },
+                hint = "网络不可用 · 显示本地缓存的目录",
+            )
+        }
     }
 
     /** 从目录树递归解析 note 的集数名（QuestionBrief 只带 source_item_id）。 */
@@ -270,14 +309,32 @@ class AppState(context: Context) {
         quizScopeId = scopeId
         val pool = guard("加载题目失败") {
             Api.draw(ws.id, scope = scopeId, count = 10)
-        } ?: return
-        quizPool = pool
-        quizIdx = 0
-        quizRight = 0
-        quizWrong = 0
-        quizAnswered = false
-        quizOutcome = null
-        quizPicked = -1
+        }
+        if (pool != null) {
+            quizPool = pool
+            quizIdx = 0
+            quizRight = 0
+            quizWrong = 0
+            quizAnswered = false
+            quizOutcome = null
+            quizPicked = -1
+            cacheScope.launch { CacheStore.put("quiz:${ws.id}:${scopeId ?: "all"}", pool) }
+        } else {
+            cacheFallback<List<QuestionBrief>>(
+                "quiz:${ws.id}:${scopeId ?: "all"}",
+                empty = { quizPool.isEmpty() },
+                apply = {
+                    quizPool = it
+                    quizIdx = 0
+                    quizRight = 0
+                    quizWrong = 0
+                    quizAnswered = false
+                    quizOutcome = null
+                    quizPicked = -1
+                },
+                hint = "网络不可用 · 显示上次缓存的题目",
+            )
+        }
     }
 
     fun currentQuestion(): QuestionBrief? = quizPool.getOrNull(quizIdx)
@@ -331,7 +388,18 @@ class AppState(context: Context) {
     // ==================== 错题本 ====================
 
     fun loadWrong() {
-        guard("加载错题失败") { Api.wrongList() }?.let { wrongList = it }
+        val fresh = guard("加载错题失败") { Api.wrongList() }
+        if (fresh != null) {
+            wrongList = fresh
+            cacheScope.launch { CacheStore.put("wrong:${user?.id ?: workspace?.id}", fresh) }
+        } else {
+            cacheFallback<List<WrongListItem>>(
+                "wrong:${user?.id ?: workspace?.id}",
+                empty = { wrongList.isEmpty() },
+                apply = { wrongList = it },
+                hint = "网络不可用 · 显示本地缓存的错题本",
+            )
+        }
     }
 
     fun redoWrong(index: Int) {
