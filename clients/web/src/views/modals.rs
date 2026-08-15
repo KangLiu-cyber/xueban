@@ -67,6 +67,19 @@ fn copy_credential(state: AppState, text: String) {
     on_err.forget();
 }
 
+/// 遮罩点击关闭：点中的元素不在 .modal 内（即点到遮罩本身）才执行关闭。
+/// P2-7：弹窗点遮罩不能关闭，统一在这里处理。
+fn overlay_close(ev: web_sys::MouseEvent, f: impl Fn() + 'static) {
+    let inside = ev
+        .target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        .and_then(|el| el.closest(".modal").ok().flatten())
+        .is_some();
+    if !inside {
+        f();
+    }
+}
+
 #[component]
 pub fn Modals(state: AppState) -> impl IntoView {
     // ---- Toast：nonce 防串台，2200ms 后若无新 toast 才隐藏 ----
@@ -253,7 +266,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
     let confirm_modal = move || {
         (view! {
             <Show when=move || state.confirm.get().is_some()>
-                <div class="modal-overlay" class:show=move || state.confirm.get().is_some()>
+                <div class="modal-overlay" class:show=move || state.confirm.get().is_some()
+                    on:click=move |ev| overlay_close(ev, move || state.confirm.set(None))>
                     <div class="modal" style="width:440px;">
                         <div class="modal-head">
                             <div class="modal-title">{move || state.confirm.get().map(|s| s.title).unwrap_or_default()}</div>
@@ -282,7 +296,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
     let preview_modal = move || {
         (view! {
             <Show when=move || state.preview_open.get() && state.preview.get().is_some()>
-                <div class="modal-overlay" class:show=move || state.preview_open.get() && state.preview.get().is_some()>
+                <div class="modal-overlay" class:show=move || state.preview_open.get() && state.preview.get().is_some()
+                    on:click=move |ev| overlay_close(ev, move || state.preview_open.set(false))>
                     <div class="modal" style="width:680px;">
                         <div class="modal-head">
                             <div>
@@ -390,7 +405,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
         let show = open && n > 0;
         (view! {
             <Show when=move || show>
-                <div class="modal-overlay" class:show=move || show>
+                <div class="modal-overlay" class:show=move || show
+                    on:click=move |ev| overlay_close(ev, move || redo_exit(state))>
                     <div class="modal" style="width:560px;">
                         <div class="modal-head">
                             <div>
@@ -564,7 +580,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
     let mock_result_modal = move || {
         (view! {
             <Show when=move || state.mock_result.get().is_some()>
-                <div class="modal-overlay" class:show=move || state.mock_result.get().is_some()>
+                <div class="modal-overlay" class:show=move || state.mock_result.get().is_some()
+                    on:click=move |ev| overlay_close(ev, move || state.mock_result.set(None))>
                     <div class="modal" style="width:470px;">
                         <div class="modal-head">
                             <div class="modal-title">"模考结果"</div>
@@ -629,7 +646,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
         let open = state.setup_open.get();
         (view! {
             <Show when=move || open>
-                <div class="modal-overlay" class:show=move || open>
+                <div class="modal-overlay" class:show=move || open
+                    on:click=move |ev| overlay_close(ev, move || state.setup_open.set(false))>
                     <div class="modal" style="width:460px;">
                         <div class="modal-head">
                             <div>
@@ -672,7 +690,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
         let open = state.agent_open.get();
         (view! {
             <Show when=move || open>
-                <div class="modal-overlay" class:show=move || open>
+                <div class="modal-overlay" class:show=move || open
+                    on:click=move |ev| overlay_close(ev, move || state.agent_open.set(false))>
                     <div class="modal" style="width:600px;">
                         <div class="modal-head">
                             <div>
@@ -715,7 +734,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
         let open = state.anno_open.get();
         (view! {
             <Show when=move || open>
-                <div class="modal-overlay" class:show=move || open>
+                <div class="modal-overlay" class:show=move || open
+                    on:click=move |ev| overlay_close(ev, move || state.anno_open.set(false))>
                     <div class="modal" style="width:480px;">
                         <div class="modal-head">
                             <div>
@@ -762,7 +782,8 @@ pub fn Modals(state: AppState) -> impl IntoView {
     let anno_detail_modal = move || {
         (view! {
             <Show when=move || state.anno_detail.get().is_some()>
-                <div class="modal-overlay" class:show=move || state.anno_detail.get().is_some()>
+                <div class="modal-overlay" class:show=move || state.anno_detail.get().is_some()
+                    on:click=move |ev| overlay_close(ev, move || state.anno_detail.set(None))>
                     <div class="modal" style="width:460px;">
                         <div class="modal-head">
                             <div class="modal-title">"📌 批注详情"</div>
