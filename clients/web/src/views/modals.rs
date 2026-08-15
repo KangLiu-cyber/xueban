@@ -134,6 +134,14 @@ pub fn Modals(state: AppState) -> impl IntoView {
                         st.set_workspace(&w);
                         st.setup_open.set(false);
                         st.toast(&format!("已创建备考空间「{}」", input.name));
+                        // P0-2：兜底恢复登录用户（正常流程登录时已置 user）
+                        if st.user.get_untracked().is_none() {
+                            let u = crate::state::ls_get(crate::state::LS_USER)
+                                .and_then(|s| serde_json::from_str(&s).ok());
+                            if let Some(u) = u {
+                                st.user.set(Some(u));
+                            }
+                        }
                         init_data(st).await;
                         let t = Timeout::new(700, move || st.agent_open.set(true));
                         t.forget();
