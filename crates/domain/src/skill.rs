@@ -1,9 +1,11 @@
-//! 系统内置 Skill 目录：开发者维护的 skill 资产（名称 + 介绍 + 脚本内容）。
+//! Skill：系统内置 Skill 目录（文件资产）与用户自定义 Skill（持久化）。
 //!
-//! skill 放在仓库根 `skills/` 文件夹（一个子文件夹一个 skill，内含 `skill.md`），
-//! 后端启动时加载为 Skill 目录，直接编辑文件即可更新。Agent 首次接入时
-//! bootstrap 全量下发（自动下载安装），之后可按名经 get_skill 重新拉取。
+//! 内置 skill 放在仓库根 `skills/` 文件夹（一个子文件夹一个 skill，内含
+//! `skill.md`），后端启动时加载为 Skill 目录，直接编辑文件即可更新；
+//! 用户自定义 skill 存 skills 表（按用户隔离）。bootstrap 能力下发时两者
+//! 合并（同名用户自定义覆盖内置），Agent 可按名经 get_skill 重新拉取。
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// 内置 Skill：名称 + 介绍 + 脚本内容。
@@ -14,6 +16,17 @@ pub struct Skill {
     pub description: String,
     /// 脚本内容（可空：纯文字说明型 skill 无脚本）。
     pub script: Option<String>,
+}
+
+/// 用户自定义 Skill：按用户隔离，存 skills 表。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserSkill {
+    pub id: i64,
+    pub user_id: i64,
+    pub name: String,
+    pub description: String,
+    pub script: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 /// 解析单个 skill 文件（`skill.md`）。

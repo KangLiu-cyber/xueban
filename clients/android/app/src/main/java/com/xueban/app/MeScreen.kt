@@ -1,5 +1,6 @@
 package com.xueban.app
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +20,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,6 +112,8 @@ fun MeScreen(state: AppState, onOpenGoal: () -> Unit) {
                     .border(1.dp, Xb.borderLight, RoundedCornerShape(14.dp))
             ) {
                 MeItem("🔌", "Agent 接入凭证") { state.agentSheetOpen = true }
+                DividerLine()
+                MeItem("🛠️", "自定义 Skill") { state.skillSheetOpen = true }
                 DividerLine()
                 MeItem("🎯", "考试目标设置") { onOpenGoal() }
                 DividerLine()
@@ -221,6 +229,110 @@ fun AgentSheet(state: AppState, onDismiss: () -> Unit) {
                     clipboard.setText(AnnotatedString(state.agentConfigText))
                     state.toast("接入凭证已复制，发送给任意 Agent 即可接入")
                 }, modifier = Modifier.weight(1.4f))
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+/** 自定义 Skill 管理弹层：列表 + 新建表单；保存后随 Agent 能力包自动下发。 */
+@Composable
+fun SkillSheet(state: AppState, onDismiss: () -> Unit) {
+    var formOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { state.loadSkills() }
+
+    XbSheet(
+        open = true,
+        onDismiss = onDismiss,
+        title = "🛠️ 自定义 Skill",
+        subtitle = "总结你的工作流，接入的 Agent 自动获取",
+        maxHeightFraction = 0.92f,
+    ) {
+        Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
+            Text(
+                "保存的 Skill 名称与介绍随 Agent 能力包自动下发，脚本内容在 Agent 按名拉取时返回。",
+                color = Xb.muted, fontSize = 12.sp, lineHeight = 18.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (formOpen) {
+                FormRow("名称") {
+                    FormInput(state.skillName, { state.skillName = it }, placeholder = "如：链接转笔记")
+                }
+                FormRow("介绍") {
+                    FormInput(state.skillDesc, { state.skillDesc = it }, placeholder = "一句话说明这个 Skill 做什么")
+                }
+                FormRow("脚本") {
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = state.skillScript,
+                        onValueChange = { state.skillScript = it },
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            fontSize = 13.5.sp, color = Xb.ink, lineHeight = 20.sp,
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 110.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Xb.surface)
+                            .border(BorderStroke(1.dp, Xb.border), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 13.dp, vertical = 11.dp),
+                        decorationBox = { inner ->
+                            Box {
+                                if (state.skillScript.isEmpty()) {
+                                    Text("输入 Skill 脚本（提示词 / 操作步骤）…", color = Xb.mutedLight, fontSize = 13.5.sp)
+                                }
+                                inner()
+                            }
+                        },
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    XbButton("取消", onClick = { formOpen = false }, modifier = Modifier.weight(1f), primary = false)
+                    XbButton("💾 保存 Skill", onClick = {
+                        if (state.createSkill()) formOpen = false
+                    }, modifier = Modifier.weight(1.4f))
+                }
+                Spacer(Modifier.height(6.dp))
+            } else {
+                XbButton("＋ 新建 Skill", onClick = { formOpen = true }, modifier = Modifier.fillMaxWidth(), primary = false)
+            }
+            Spacer(Modifier.height(12.dp))
+            if (state.skills.isEmpty()) {
+                Text(
+                    "还没有自定义 Skill，点上方按钮新建",
+                    color = Xb.mutedLight, fontSize = 12.sp,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                )
+            }
+            state.skills.forEach { s ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(Xb.surface)
+                        .border(BorderStroke(1.dp, Xb.borderLight), RoundedCornerShape(11.dp))
+                        .padding(horizontal = 13.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(s.name, color = Xb.ink, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            s.description, color = Xb.muted, fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 2.dp),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Text(
+                        "删除",
+                        color = Xb.red, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(7.dp))
+                            .clickable { state.deleteSkill(s.id) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
             }
             Spacer(Modifier.height(10.dp))
         }

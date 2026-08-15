@@ -9,14 +9,16 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use chrono::{DateTime, Utc};
+use domain::error::Error;
 use domain::event::Event;
 use domain::identity::{Token, TokenPurpose, User};
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
-    WorkspaceRepository, WrongItemRepository,
+    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
+    UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 use domain::practice::{Paper, Question, QuestionType, QuizRecord, WrongItem, WrongStats};
+use domain::skill::UserSkill;
 use domain::space::{Annotation, Item, ItemKind, ItemNode, Workspace};
 
 fn now() -> DateTime<Utc> {
@@ -613,6 +615,70 @@ impl EventStore for InMemoryEventStore {
             .collect();
         list.reverse(); // 时间升序返回，调用方按需反转
         Ok(list)
+    }
+}
+
+/// 用户自定义 Skill 内存仓储：key 为 (user_id, name) 对齐唯一约束，
+/// 重复插入返回 Conflict（与 SQLx 适配器语义一致）。
+#[derive(Default)]
+pub struct InMemorySkillRepository {
+    skills: Mutex<HashMap<(i64, String), UserSkill>>,
+    next_id: AtomicI64,
+}
+
+#[async_trait]
+impl SkillRepository for InMemorySkillRepository {
+    async fn insert(&self, skill: &UserSkill) -> domain::Result<i64> {
+        let mut guard = self.skills.lock().unwrap();
+        if guard.contains_key(&(skill.user_id, skill.name.clone())) {
+            return Err(Error::Conflict("记录已存在".to_owned()));
+        }
+        let id = take_id(&self.next_id);
+        let mut s = skill.clone();
+        s.id = id;
+        guard.insert((s.user_id, s.name.clone()), s);
+        Ok(id)
+    }
+
+    async fn list_by_user(&self, user_id: i64) -> domain::Result<Vec<UserSkill>> {
+        let mut list: Vec<UserSkill> = self
+            .skills
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|s| s.user_id == user_id)
+            .cloned()
+            .collect();
+        list.sort_by_key(|s| s.id);
+        Ok(list)
+    }
+
+    async fn find_by_name_and_user(
+        &self,
+        name: &str,
+        user_id: i64,
+    ) -> domain::Result<Option<UserSkill>> {
+        Ok(self
+            .skills
+            .lock()
+            .unwrap()
+            .get(&(user_id, name.to_owned()))
+            .cloned())
+    }
+
+    async fn delete(&self, id: i64, user_id: i64) -> domain::Result<bool> {
+        let mut guard = self.skills.lock().unwrap();
+        let key = guard
+            .iter()
+            .find(|(_, s)| s.id == id && s.user_id == user_id)
+            .map(|(k, _)| k.clone());
+        match key {
+            Some(k) => {
+                guard.remove(&k);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 }
 

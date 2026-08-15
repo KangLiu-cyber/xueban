@@ -1,8 +1,9 @@
 # 超级学习助手 · 系统架构设计
 
-版本：v1.1 ｜ 日期：2026-08-15 ｜ 状态：评审稿
-关联文档：《requirements.md》（需求 v7.2）、桌面端原型 v3 柔和版、安卓端原型 v1
+版本：v1.2 ｜ 日期：2026-08-15 ｜ 状态：评审稿
+关联文档：《requirements.md》（需求 v7.3）、桌面端原型 v3 柔和版、安卓端原型 v1
 
+v1.2 变更：新增客户端更新机制（公开清单接口 `GET /api/v1/update` + 桌面端 Tauri updater + 安卓端自建 OTA），CI 增加桌面 Windows 矩阵与安卓 release 签名。
 v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增限界上下文划分、端口定义与 Rust 工程结构。
 
 ## 一、设计目标与约束
@@ -134,6 +135,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 | PaperRepository | 试卷快照存取 | question_ids 用 JSONB |
 | EventStore | 事件追加与按用户回放 | 按 (user_id, created_at) 索引 |
 | CredentialIssuer | token 生成 | 随机 32 字节 Base62，usr_ 前缀 |
+| UpdateSource | 客户端更新清单获取 | 拉取 GitHub Release 的 update.json，短 TTL 缓存 |
 
 ### 5.3 依赖倒置示例：刷题用例
 
@@ -154,7 +156,8 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── identity.rs      # User、Token、密码与凭证规则
 │   │       ├── space.rs         # Workspace、Item 树、Annotation
 │   │       ├── practice.rs      # Question、WrongItem、Paper、抽题/判分领域服务
-│   │       ├── skill.rs         # Skill（内置目录解析 skills/*/skill.md）
+│   │       ├── skill.rs         # Skill + UserSkill（内置目录解析 skills/*/skill.md；用户自定义存库）
+│   │       ├── update.rs        # UpdateManifest（客户端更新清单）
 │   │       ├── event.rs         # Event、领域事件定义
 │   │       └── ports.rs         # 仓储端口 traits（输出端口）
 │   ├── application/             # 应用层：用例编排
@@ -164,18 +167,21 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── quiz.rs          # DrawQuestions / SubmitAnswer
 │   │       ├── wrong.rs         # ListWrong / RedoWrong / MarkMastered
 │   │       ├── paper.rs         # AssemblePaper / SubmitPaper
-│   │       └── agent.rs         # AgentBootstrap / ReadEvents / ReportStatus / GetSkill
+│   │       └── agent.rs         # AgentBootstrap / ReadEvents / ReportStatus / GetSkill / CreateSkill / ListSkills / DeleteSkill
+│   │       └── update.rs        # GetUpdateManifest（读 UpdateSource 端口）
 │   ├── adapter-http/            # 驱动适配器：Axum REST API（/api/v1）
 │   │   └── src/
 │   │       ├── lib.rs           # 路由组装与中间件
 │   │       ├── agent.rs         # Agent 凭证端点
 │   │       ├── auth.rs          # 注册 / 登录 / 注销
 │   │       ├── middleware.rs    # require_auth + 限流
+│   │       ├── skill.rs         # 自定义 Skill 端点（清单 / 新建 / 删除）
 │   │       └── ...              # space / quiz / wrong / paper 等端点
 │   ├── adapter-mcp/             # 驱动适配器：MCP 网关 + 能力下发
 │   ├── adapter-postgres/        # 被驱动适配器：SQLx 仓储与事件存储实现
 │   │   └── src/
 │   │       ├── lib.rs           # map_sqlx_error 与导出
+│   │       ├── skill.rs         # PgSkillRepository（用户自定义 Skill 存库）
 │   │       └── ...              # 其余 Pg*Repository 与 PgEventStore
 │   └── bootstrap/               # 组装：依赖注入、配置、迁移、main
 ├── clients/                     # 客户端：独立 workspace（被后端 exclude）
@@ -373,6 +379,10 @@ events (
 | 组卷 | `POST /api/v1/papers/:id/submit` | SubmitPaper |
 | Agent | `GET /api/v1/agent/credential` | 读取接入凭证文案 |
 | Agent | `POST /api/v1/agent/credential/rotate` | 换发 token |
+| Skill | `GET /api/v1/agent/skills` | ListSkills（用户自定义 Skill 清单） |
+| Skill | `POST /api/v1/agent/skills` | CreateSkill（保存自定义 Skill） |
+| Skill | `DELETE /api/v1/agent/skills/:id` | DeleteSkill |
+| 更新 | `GET /api/v1/update` | GetUpdateManifest（公开，无需登录；返回桌面端 Tauri 兼容清单 + 安卓端字段，见 requirements.md §13.2） |
 
 作答与答案的 JSON 格式约定（`questions.answer`、`quiz_records.chosen`、REST 请求/响应共用）：
 
@@ -385,7 +395,7 @@ MCP tool handler 与 REST handler 一样只做协议翻译，复用同一组用�
 
 | 工具 | 对应用例 |
 |:---|:---|
-| `bootstrap` | AgentBootstrap（返回备考提示词、工具清单、内置 Skill 目录全量内容 `skills`（含脚本）） |
+| `bootstrap` | AgentBootstrap（返回备考提示词、工具清单、Skill 目录全量内容 `skills`（含脚本）；Skill 目录 = 内置 + 用户自定义合并，同名用户自定义覆盖内置） |
 | `create_workspace` | ManageExamGoal（创建） |
 | `create_item` / `write_item` | BrowseTree / ReadNote 的写入侧（Agent 内容写入） |
 | `read_item` / `list_items` | BrowseTree / ReadNote |
@@ -393,14 +403,14 @@ MCP tool handler 与 REST handler 一样只做协议翻译，复用同一组用�
 | `save_questions` | SaveQuestions |
 | `get_events` | ReadEvents |
 | `report_status` | ReportStatus |
-| `get_skill` | GetSkill（按名拉取内置 skill 完整内容，含脚本，重新安装/更新用） |
+| `get_skill` | GetSkill（按名拉取 skill 完整内容，含脚本，重新安装/更新用；用户自定义优先，无同名自定义时回退内置目录） |
 
 MCP 适配器的强制规则：
 
 - 每个请求先校验 token，解析出 user_id 注入用例上下文。
 - Agent 写入全部记入 events（action = agent_write），客户端可展示"由 AI 生成"的来源标注。
 - 单 token 限流（默认 60 次/分钟），防止异常 Agent 打满服务。
-- 能力包（Skill + 提示词 + 工具清单 + 内置 Skill 目录）按版本管理，服务端升级后 Agent 下次接入自动获取新版本，无需用户重新复制凭证。内置 Skill 目录为全局共享资产：开发者把 skill（一个子文件夹一个 skill，内含 `skill.md`，含名称、介绍与脚本）放进仓库根 `skills/` 文件夹，后端启动时自动加载解析（见 §5.4 `domain/src/skill.rs`）；直接编辑文件夹内文件即可更新。`bootstrap` 全量下发全部 skill（含脚本），Agent 首次接入即自动下载安装；之后按名调 `get_skill` 重新拉取（更新/修复安装）。所有用户接入拿到同一份清单，无用户维度区分。
+- 能力包（Skill + 提示词 + 工具清单 + Skill 目录）按版本管理，服务端升级后 Agent 下次接入自动获取新版本，无需用户重新复制凭证。Skill 目录 = 内置 + 用户自定义合并：内置为全局共享资产，开发者把 skill（一个子文件夹一个 skill，内含 `skill.md`，含名称、介绍与脚本）放进仓库根 `skills/` 文件夹，后端启动时自动加载解析（见 §5.4 `domain/src/skill.rs`），直接编辑文件夹内文件即可更新；用户自定义由客户端「我的 → 自定义 Skill」保存（存库，按用户隔离），bootstrap 合并时同名用户自定义覆盖内置。`bootstrap` 全量下发合并后的全部 skill（含脚本），Agent 首次接入即自动下载安装；之后按名调 `get_skill` 重新拉取（更新/修复安装，用户自定义优先，无同名自定义时回退内置目录）。
 
 ## 九、核心流程
 
@@ -461,6 +471,7 @@ Agent 生成（原始数据）                使用过程（派生数据）
 - 审计：Agent 的每次写入、用户的每次作答都落 events 表，可按用户回溯全部内容变更。
 - 输入校验：驱动适配器做协议层校验（格式、大小），领域层做业务校验（归属、不变式）。笔记正文与题目写入有大小上限（单 item 正文 ≤ 512KB，单批题目 ≤ 200 题）。
 - 限流：REST 与 MCP 均按 token 限流，REST 鉴权通过后另按账号（user_id）封顶，防多 token 叠加绕限；注册接口按 IP 限流防刷。计数为进程内存固定窗口（单机部署足够，Redis 二期可选引入，见 §9）。
+- 客户端更新防篡改：更新清单与安装包经 GitHub Release 分发；桌面端 Tauri updater 校验安装包签名（私钥仅存 CI 密钥），安卓端校验 sha256（与清单比对），客户端只安装哈希/签名匹配的包；`GET /api/v1/update` 返回的清单带版本与哈希，作为客户端唯一信任来源。
 
 ## 十一、部署架构
 
@@ -480,7 +491,8 @@ Agent 生成（原始数据）                使用过程（派生数据）
 - **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制 + trunk 编译前端 web 产物，`scripts/package-server.sh` 打成安装包（tar.gz：`deploy/` + `skills/` + 二进制按仓库路径 + `clients/web/dist`，解压即部署源）。`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录与前端 web 产物由 compose 只读挂载（`../skills:/app/skills:ro`、`../clients/web/dist:/app/clients/web/dist:ro`），宿主直接替换挂载目录内容即更新，无需重建镜像。
 - **前端由服务端静态托管**：不做 nginx 容器。bootstrap 挂 SPA fallback——REST 与 MCP 路由优先，其余路径由 server 直接 serve 前端产物（`WEB_DIST_DIR`，默认相对路径 `clients/web/dist`，与 skills 同挂载模式），未命中文件回退 `index.html`；`/api` 与 `/mcp` 的未匹配路径保持 404，不回退到页面。前端 API 基址走浏览器运行期同源兜底（location.origin），与 MCP 天然同源。
 - **compose 编排两个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `server`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT` 环境变量注入）。浏览器访问 `http://<host>:8080`，MCP 端点对外为 `http://<host>:8080/mcp`。
-- **打固定版本 tag 才发 Release**：推送 `v*` tag（如 `v0.1.0`，版本号手动固定）触发；gate + build-musl + android + desktop 通过后创建 GitHub Release（用所打的 tag），上传**三个独立交付物**——服务端部署包（tar.gz，docker 部署源）、安卓 APK（debug 可安装验证）、桌面端安装包（.deb / .AppImage）。日常推 main 不发。
+- **打固定版本 tag 才发 Release**：推送 `v*` tag（如 `v0.1.0`，版本号手动固定）触发；gate + build-musl + android + desktop 通过后创建 GitHub Release（用所打的 tag），上传**四个独立交付物**——服务端部署包（tar.gz，docker 部署源）、安卓 APK（release 签名，可安装验证）、桌面端安装包（Linux .deb / .AppImage + Windows NSIS）、更新清单 `update.json`（版本号、各平台安装包 sha256 与 Tauri 签名、下载地址，见 requirements.md §13）。日常推 main 不发。
+- **客户端更新分发**：发布产物统一按固定名上传（`xueban-<tag>.apk`、`xueban_<ver>_amd64.deb` / `.AppImage`、`xueban_<ver>_x64-setup.exe`、`update.json`），`https://github.com/…/releases/latest/download/<名>` 直链稳定；服务端 `GET /api/v1/update` 拉取 update.json 并短 TTL 缓存，客户端启动时经该接口检查更新（桌面端 Tauri updater 校验签名；安卓端自建 OTA 校验 sha256 后走系统安装器，macOS 暂不做）。
 - **数据库迁移内置**：sqlx::migrate! 编译期嵌入迁移脚本，server 启动时自动执行，镜像无需挂载 migrations/。
 - TLS 与域名反代不在 compose 内（由部署侧网关 / 平台另行处理）；数据库备份（每日 pg_dump → 对象存储）由部署侧 cron 或托管服务承担，不再内置 sidecar。
 - 服务端无推理负载，2C4G 可支撑数千日活；瓶颈出现时优先升配。
@@ -505,7 +517,7 @@ Agent 生成（原始数据）                使用过程（派生数据）
 | 服务端语言 | Rust + Axum + SQLx | 单二进制，domain crate 零框架依赖 |
 | 数据库 | PostgreSQL 16 | 树结构 + JSONB 题目/事件 |
 | 缓存 | Redis（可选，二期引入） | 会话缓存、限流计数 |
-| 桌面端 | Tauri + Web 前端 | 按 v3 柔和版原型实现 |
+| 桌面端 | Tauri + Web 前端 | 按 v3 柔和版原型实现；更新用 tauri-plugin-updater（Linux / Windows，签名更新，macOS 暂不做） |
 | 安卓端 | Kotlin + Jetpack Compose + Material 3 | 按安卓原型 v1 实现；WindowSizeClass 处理折叠屏（≥600dp 双栏） |
 | Agent 接入 | MCP over HTTPS | 能力包 = Skill + 提示词 + 工具清单 |
 | 部署 | Docker Compose + Caddy | 单机起步 |
@@ -517,6 +529,7 @@ Agent 生成（原始数据）                使用过程（派生数据）
 | P0 账号与接入 | 六边形工程骨架（crate 分层 + CI 依赖检查）、注册 / 登录 / token、工作空间与考试目标、MCP 适配器 + 能力下发、items 树读写 | Agent 复制凭证接入后能生成目录与笔记，客户端可见；两用户数据互不可见；domain crate 无框架依赖 |
 | P1 学习闭环 | 批注、题库写入、刷题、错题本 | 笔记可批注；每集习题可刷；答错自动进错题本并可重做；用例层测试全绿 |
 | P2 模考与复盘 | 组卷、模考判分、复盘事件读取、学习统计 | 组卷 75 题模考全流程跑通；复盘 Agent 能读到错题事件 |
+| P2.5 客户端更新 | 更新清单接口、桌面端 Tauri updater 接入（Linux / Windows）、安卓端自建 OTA（release 签名）、CI 双平台打包 | 打 v* tag 发版后，桌面端与安卓端启动检查并提示更新，下载安装全流程可用 |
 | P3 商业化基础 | 订阅计费接口、配额管理 | 账号体系对接支付，按订阅控制配额 |
 
 客户端节奏：桌面端随 P0/P1 同步实现，安卓端在 P1 完成后按已定稿原型开发，两端共用同一后端，不重复建设。

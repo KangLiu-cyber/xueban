@@ -8,6 +8,7 @@ mod codec;
 mod events;
 mod identity;
 mod practice;
+mod skill;
 mod space;
 
 pub use events::PgEventStore;
@@ -17,6 +18,7 @@ pub use identity::{
 pub use practice::{
     PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgWrongItemRepository,
 };
+pub use skill::PgSkillRepository;
 pub use space::{PgAnnotationRepository, PgItemRepository, PgWorkspaceRepository};
 
 use domain::error::{Error, Result};

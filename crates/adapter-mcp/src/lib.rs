@@ -18,7 +18,7 @@ use axum::Router;
 use axum::middleware as axum_mw;
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PasswordHasher,
-    QuestionRepository, TokenRepository, UserRepository, WorkspaceRepository,
+    QuestionRepository, SkillRepository, TokenRepository, UserRepository, WorkspaceRepository,
 };
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
@@ -45,6 +45,7 @@ pub type PgAgentService = AgentService<
     dyn ItemRepository + Send + Sync,
     dyn QuestionRepository + Send + Sync,
     dyn EventStore + Send + Sync,
+    dyn SkillRepository + Send + Sync,
 >;
 
 /// MCP 网关状态：鉴权服务 + 空间/Agent 服务（bootstrap 预组装注入）+ 限流器。

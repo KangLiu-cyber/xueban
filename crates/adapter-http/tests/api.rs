@@ -9,8 +9,9 @@ mod common;
 use adapter_http::{AppState, router};
 use adapter_postgres::{
     Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
-    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgTokenRepository,
-    PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository, RandomCredentialIssuer,
+    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgSkillRepository,
+    PgTokenRepository, PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository,
+    RandomCredentialIssuer,
 };
 use application::agent::AgentService;
 use application::auth::AuthService;
@@ -24,8 +25,8 @@ use axum::http::{Method, Request, StatusCode};
 use chrono::Utc;
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
-    WorkspaceRepository, WrongItemRepository,
+    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
+    UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 use domain::practice::{Answer, Question, QuestionType};
 use domain::space::{Creator, Item, ItemKind};
@@ -58,6 +59,8 @@ async fn app() -> Option<Router> {
         Arc::new(PgWrongItemRepository::new(pool.clone()));
     let papers: Arc<dyn PaperRepository + Send + Sync> =
         Arc::new(PgPaperRepository::new(pool.clone()));
+    let skills_repo: Arc<dyn SkillRepository + Send + Sync> =
+        Arc::new(PgSkillRepository::new(pool.clone()));
     let events: Arc<dyn EventStore + Send + Sync> = Arc::new(PgEventStore::new(pool));
 
     let auth = Arc::new(AuthService::new(users, tokens, hasher, issuer));
@@ -89,6 +92,7 @@ async fn app() -> Option<Router> {
         items,
         questions,
         events,
+        skills_repo,
         Vec::new(),
     ));
     Some(router(AppState::new(

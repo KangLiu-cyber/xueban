@@ -1,9 +1,11 @@
-//! Agent 接入用例：AgentBootstrap / SaveQuestions / ReadEvents / ReportStatus / GetSkill。
+//! Agent 接入用例：AgentBootstrap / SaveQuestions / ReadEvents / ReportStatus / GetSkill，
+//! 以及用户自定义 Skill 管理（CreateSkill / ListSkills / DeleteSkill）。
 //!
 //! Agent 只经 MCP 接入：连接时 token 解析出 user_id 注入上下文，工具入参
 //! 不存在用户身份字段。能力包（Skill + 提示词 + 工具清单）按版本下发；
-//! 系统内置 Skill 目录（开发者放在 `skills/` 文件夹，启动时加载）随 bootstrap
-//! 全量下发，Agent 首次接入即自动下载安装；之后可按名经 get_skill 重新拉取。
+//! 系统内置 Skill 目录（开发者放在 `skills/` 文件夹，启动时加载）与用户
+//! 自定义 Skill（skills 表，按用户隔离）合并后随 bootstrap 全量下发，
+//! 同名用户自定义覆盖内置；之后可按名经 get_skill 重新拉取（用户优先）。
 //! Agent 写入（save_questions）复用题目仓储，落 agent_write 事件供客户端溯源。
 
 use std::sync::Arc;
@@ -11,9 +13,11 @@ use std::sync::Arc;
 use chrono::Utc;
 use domain::error::{Error, Result};
 use domain::event::{Event, EventAction};
-use domain::ports::{EventStore, ItemRepository, QuestionRepository, WorkspaceRepository};
+use domain::ports::{
+    EventStore, ItemRepository, QuestionRepository, SkillRepository, WorkspaceRepository,
+};
 use domain::practice::{Answer, Question, QuestionType};
-use domain::skill::Skill;
+use domain::skill::{Skill, UserSkill};
 use domain::space::Workspace;
 use serde::{Deserialize, Serialize};
 
@@ -33,13 +37,14 @@ pub struct QuestionInput {
     pub explanation: Option<String>,
 }
 
-/// AgentBootstrap 返回值：Skill 定义、备考提示词、工具清单、内置 Skill 目录。
+/// AgentBootstrap 返回值：Skill 定义、备考提示词、工具清单、合并 Skill 目录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentCapability {
     pub assistant: String,
     pub prompt: String,
     pub tools: Vec<String>,
-    /// 系统内置 Skill 目录（全量下发，含脚本）：Agent 首次接入自动下载安装。
+    /// 合并 Skill 目录（全量下发，含脚本）：系统内置 + 用户自定义，同名
+    /// 用户自定义覆盖内置；Agent 首次接入自动下载安装。
     pub skills: Vec<Skill>,
     pub version: u32,
 }
@@ -67,33 +72,38 @@ const TOOLS: [&str; 11] = [
     "get_skill",
 ];
 
-pub struct AgentService<W, I, Q, E>
+pub struct AgentService<W, I, Q, E, S>
 where
     W: WorkspaceRepository + ?Sized,
     I: ItemRepository + ?Sized,
     Q: QuestionRepository + ?Sized,
     E: EventStore + ?Sized,
+    S: SkillRepository + ?Sized,
 {
     workspaces: Arc<W>,
     items: Arc<I>,
     questions: Arc<Q>,
     events: Arc<E>,
+    /// 用户自定义 Skill 仓储：按用户隔离，bootstrap 与内置合并下发。
+    skills_repo: Arc<S>,
     /// 系统内置 Skill 目录：开发者维护，bootstrap 全量下发。
     skills: Vec<Skill>,
 }
 
-impl<W, I, Q, E> AgentService<W, I, Q, E>
+impl<W, I, Q, E, S> AgentService<W, I, Q, E, S>
 where
     W: WorkspaceRepository + ?Sized,
     I: ItemRepository + ?Sized,
     Q: QuestionRepository + ?Sized,
     E: EventStore + ?Sized,
+    S: SkillRepository + ?Sized,
 {
     pub fn new(
         workspaces: Arc<W>,
         items: Arc<I>,
         questions: Arc<Q>,
         events: Arc<E>,
+        skills_repo: Arc<S>,
         skills: Vec<Skill>,
     ) -> Self {
         Self {
@@ -101,13 +111,15 @@ where
             items,
             questions,
             events,
+            skills_repo,
             skills,
         }
     }
 
     /// AgentBootstrap：能力下发。提示词基于用户首个空间的考试目标定制；
-    /// 尚无空间时给出引导文案，能力本身始终可用。内置 Skill 目录全量下发
-    /// （含脚本），Agent 首次接入即自动下载安装。
+    /// 尚无空间时给出引导文案，能力本身始终可用。合并 Skill 目录全量下发
+    /// （含脚本）：系统内置 + 用户自定义（同名用户自定义覆盖内置），
+    /// Agent 首次接入即自动下载安装。
     pub async fn bootstrap(&self, user_id: i64) -> Result<AgentCapability> {
         let goal = self
             .workspaces
@@ -130,18 +142,88 @@ where
             assistant: "xueban-study-assistant".to_owned(),
             prompt,
             tools: TOOLS.iter().map(|t| (*t).to_owned()).collect(),
-            skills: self.skills.clone(),
+            skills: self.merged_skills(user_id).await?,
             version: CAPABILITY_VERSION,
         })
     }
 
-    /// GetSkill：按名拉取单个 skill 完整内容（Agent 更新/重新安装用）。
-    pub async fn get_skill(&self, name: &str) -> Result<Skill> {
+    /// 合并 Skill 目录：内置在前（保持原排序），用户自定义按 id 追加，
+    /// 同名用户自定义替换内置的定义（覆盖语义）。
+    async fn merged_skills(&self, user_id: i64) -> Result<Vec<Skill>> {
+        let mut merged = self.skills.clone();
+        for s in self.skills_repo.list_by_user(user_id).await? {
+            let definition = Skill {
+                name: s.name,
+                description: s.description,
+                script: s.script,
+            };
+            match merged.iter_mut().find(|b| b.name == definition.name) {
+                Some(existing) => *existing = definition,
+                None => merged.push(definition),
+            }
+        }
+        Ok(merged)
+    }
+
+    /// GetSkill：按名拉取单个 skill 完整内容（Agent 更新/重新安装用），
+    /// 用户自定义优先，无则查系统内置。
+    pub async fn get_skill(&self, user_id: i64, name: &str) -> Result<Skill> {
+        if let Some(s) = self
+            .skills_repo
+            .find_by_name_and_user(name, user_id)
+            .await?
+        {
+            return Ok(Skill {
+                name: s.name,
+                description: s.description,
+                script: s.script,
+            });
+        }
         self.skills
             .iter()
             .find(|s| s.name == name)
             .cloned()
             .ok_or_else(|| Error::NotFound("skill 不存在".to_owned()))
+    }
+
+    /// CreateSkill：保存用户自定义 skill。名称与介绍 trim 后非空；重名由
+    /// 仓储唯一约束拒绝（Conflict 透传）。script 可空（纯说明型 skill）。
+    pub async fn create_skill(
+        &self,
+        user_id: i64,
+        name: String,
+        description: String,
+        script: Option<String>,
+    ) -> Result<UserSkill> {
+        let name = name.trim().to_owned();
+        let description = description.trim().to_owned();
+        if name.is_empty() || description.is_empty() {
+            return Err(Error::Invalid("skill 名称与介绍不能为空".to_owned()));
+        }
+        let now = Utc::now();
+        let skill = UserSkill {
+            id: 0,
+            user_id,
+            name,
+            description,
+            script,
+            created_at: now,
+        };
+        let id = self.skills_repo.insert(&skill).await?;
+        Ok(UserSkill { id, ..skill })
+    }
+
+    /// ListSkills：用户自定义 skill 清单（客户端管理用，不含内置）。
+    pub async fn list_skills(&self, user_id: i64) -> Result<Vec<UserSkill>> {
+        self.skills_repo.list_by_user(user_id).await
+    }
+
+    /// DeleteSkill：删除用户自定义 skill（带归属校验），未命中返回 NotFound。
+    pub async fn delete_skill(&self, user_id: i64, id: i64) -> Result<()> {
+        if !self.skills_repo.delete(id, user_id).await? {
+            return Err(Error::NotFound("skill 不存在".to_owned()));
+        }
+        Ok(())
     }
 
     /// SaveQuestions：批量写入习题（单批 ≤ 200），归属校验 + 笔记（集）约束，
@@ -239,7 +321,7 @@ mod tests {
     use super::*;
     use crate::inmem::{
         InMemoryEventStore, InMemoryItemRepository, InMemoryQuestionRepository,
-        InMemoryWorkspaceRepository, insert_item,
+        InMemorySkillRepository, InMemoryWorkspaceRepository, insert_item,
     };
     use domain::space::ItemKind;
 
@@ -249,6 +331,7 @@ mod tests {
             InMemoryItemRepository,
             InMemoryQuestionRepository,
             InMemoryEventStore,
+            InMemorySkillRepository,
         >,
         ws_id: i64,
         item_id: i64,
@@ -273,6 +356,7 @@ mod tests {
             item_repo.clone(),
             Arc::new(InMemoryQuestionRepository::default()),
             Arc::new(InMemoryEventStore::default()),
+            Arc::new(InMemorySkillRepository::default()),
             Vec::new(),
         );
         Ctx {
@@ -329,6 +413,7 @@ mod tests {
             Arc::new(InMemoryItemRepository::default()),
             Arc::new(InMemoryQuestionRepository::default()),
             Arc::new(InMemoryEventStore::default()),
+            Arc::new(InMemorySkillRepository::default()),
             Vec::new(),
         );
         let cap = svc.bootstrap(2).await.unwrap();
@@ -344,6 +429,7 @@ mod tests {
             c.item_repo.clone(),
             Arc::new(InMemoryQuestionRepository::default()),
             Arc::new(InMemoryEventStore::default()),
+            Arc::new(InMemorySkillRepository::default()),
             catalog(),
         );
         let cap = svc.bootstrap(1).await.unwrap();
@@ -360,25 +446,162 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_skill_returns_full_content_by_name() {
+    async fn bootstrap_merges_user_skills_over_builtin() {
         let c = ctx().await;
         let svc = AgentService::new(
             c.svc.workspaces.clone(),
             c.item_repo.clone(),
             Arc::new(InMemoryQuestionRepository::default()),
             Arc::new(InMemoryEventStore::default()),
+            Arc::new(InMemorySkillRepository::default()),
             catalog(),
         );
-        let s = svc.get_skill("链接转笔记").await.unwrap();
-        assert_eq!(s.description, "把链接内容整理成笔记");
+        // 用户自定义一个全新 skill + 一个与内置同名的覆盖 skill。
+        let _ = svc
+            .create_skill(
+                1,
+                "错题复盘".into(),
+                "分析错题原因".into(),
+                Some("脚本A".into()),
+            )
+            .await
+            .unwrap();
+        let _ = svc
+            .create_skill(
+                1,
+                "链接转笔记".into(),
+                "用户版介绍".into(),
+                Some("用户版脚本".into()),
+            )
+            .await
+            .unwrap();
+        let cap = svc.bootstrap(1).await.unwrap();
+        assert_eq!(cap.skills.len(), 3);
+        // 同名覆盖：链接转笔记取用户版内容。
+        let overwritten = cap.skills.iter().find(|s| s.name == "链接转笔记").unwrap();
+        assert_eq!(overwritten.description, "用户版介绍");
+        assert_eq!(overwritten.script.as_deref(), Some("用户版脚本"));
+        // 全新 skill 追加在目录尾部。
+        assert_eq!(cap.skills[2].name, "错题复盘");
+        assert_eq!(cap.skills[2].script.as_deref(), Some("脚本A"));
+        // 目录按用户隔离：他人接入只拿内置。
+        let other = svc.bootstrap(2).await.unwrap();
+        assert_eq!(other.skills, catalog());
+    }
+
+    #[tokio::test]
+    async fn get_skill_prefers_user_skill_and_isolates_users() {
+        let c = ctx().await;
+        let svc = AgentService::new(
+            c.svc.workspaces.clone(),
+            c.item_repo.clone(),
+            Arc::new(InMemoryQuestionRepository::default()),
+            Arc::new(InMemoryEventStore::default()),
+            Arc::new(InMemorySkillRepository::default()),
+            catalog(),
+        );
+        let _ = svc
+            .create_skill(
+                1,
+                "链接转笔记".into(),
+                "用户版介绍".into(),
+                Some("用户版脚本".into()),
+            )
+            .await
+            .unwrap();
+        // 用户优先：同名取用户自定义。
+        let s = svc.get_skill(1, "链接转笔记").await.unwrap();
+        assert_eq!(s.script.as_deref(), Some("用户版脚本"));
+        // 无同名时回退内置。
+        let s = svc.get_skill(1, "习题生成").await.unwrap();
+        assert_eq!(s.description, "基于笔记生成习题");
+        // 跨用户：他人查不到用户自定义，回退内置。
+        let s = svc.get_skill(2, "链接转笔记").await.unwrap();
         assert_eq!(
             s.script.as_deref(),
             Some("步骤1：解析链接\n步骤2：生成框架笔记")
         );
         assert!(matches!(
-            svc.get_skill("不存在").await,
+            svc.get_skill(1, "不存在").await,
             Err(Error::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn create_skill_validates_and_rejects_duplicate() {
+        let c = ctx().await;
+        // 空名 / 空介绍 → Invalid。
+        assert!(matches!(
+            c.svc
+                .create_skill(1, "  ".into(), "介绍".into(), None)
+                .await,
+            Err(Error::Invalid(_))
+        ));
+        assert!(matches!(
+            c.svc
+                .create_skill(1, "名字".into(), "  ".into(), None)
+                .await,
+            Err(Error::Invalid(_))
+        ));
+        // 正常创建：trim 名称。
+        let s = c
+            .svc
+            .create_skill(1, " 错题复盘 ".into(), "介绍".into(), Some("脚本".into()))
+            .await
+            .unwrap();
+        assert_eq!(s.name, "错题复盘");
+        // 同用户重名 → Conflict。
+        assert!(matches!(
+            c.svc
+                .create_skill(1, "错题复盘".into(), "介绍".into(), None)
+                .await,
+            Err(Error::Conflict(_))
+        ));
+        // 他人同名不冲突。
+        assert!(
+            c.svc
+                .create_skill(2, "错题复盘".into(), "介绍".into(), None)
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn list_and_delete_skills_isolate_users() {
+        let c = ctx().await;
+        let id = c
+            .svc
+            .create_skill(1, "错题复盘".into(), "介绍".into(), None)
+            .await
+            .unwrap()
+            .id;
+        let _ = c
+            .svc
+            .create_skill(1, "链接整理".into(), "介绍".into(), None)
+            .await
+            .unwrap();
+        let _ = c
+            .svc
+            .create_skill(2, "他人 skill".into(), "介绍".into(), None)
+            .await
+            .unwrap();
+        // 清单按用户隔离且 id 升序。
+        let mine = c.svc.list_skills(1).await.unwrap();
+        assert_eq!(mine.len(), 2);
+        assert_eq!(mine[0].name, "错题复盘");
+        assert_eq!(mine[1].name, "链接整理");
+        assert_eq!(c.svc.list_skills(2).await.unwrap().len(), 1);
+        // 删除：成功 / 他人 id → NotFound / 重复删 → NotFound。
+        c.svc.delete_skill(1, id).await.unwrap();
+        assert!(matches!(
+            c.svc.delete_skill(2, id).await,
+            Err(Error::NotFound(_))
+        ));
+        assert!(matches!(
+            c.svc.delete_skill(1, id).await,
+            Err(Error::NotFound(_))
+        ));
+        assert_eq!(c.svc.list_skills(1).await.unwrap().len(), 1);
     }
 
     #[tokio::test]

@@ -18,8 +18,9 @@ use std::sync::Arc;
 
 use adapter_postgres::{
     Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
-    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgTokenRepository,
-    PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository, RandomCredentialIssuer,
+    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgSkillRepository,
+    PgTokenRepository, PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository,
+    RandomCredentialIssuer,
 };
 use application::agent::AgentService;
 use application::auth::AuthService;
@@ -32,8 +33,8 @@ use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse;
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
-    WorkspaceRepository, WrongItemRepository,
+    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
+    UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 use domain::skill::{Skill, parse_skill_file};
 use sqlx::postgres::PgPoolOptions;
@@ -128,6 +129,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(PgWrongItemRepository::new(pool.clone()));
     let papers: Arc<dyn PaperRepository + Send + Sync> =
         Arc::new(PgPaperRepository::new(pool.clone()));
+    let skills_repo: Arc<dyn SkillRepository + Send + Sync> =
+        Arc::new(PgSkillRepository::new(pool.clone()));
     let events: Arc<dyn EventStore + Send + Sync> = Arc::new(PgEventStore::new(pool));
 
     // 内置 Skill 目录：启动时从 `skills/` 文件夹加载（开发者维护的静态资产）。
@@ -160,7 +163,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         events.clone(),
     ));
     let agent = Arc::new(AgentService::new(
-        workspaces, items, questions, events, skills,
+        workspaces,
+        items,
+        questions,
+        events,
+        skills_repo,
+        skills,
     ));
 
     let http_state = adapter_http::AppState::new(

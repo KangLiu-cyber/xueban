@@ -19,6 +19,7 @@ pub mod error;
 pub mod middleware;
 pub mod paper;
 pub mod quiz;
+pub mod skill;
 pub mod space;
 pub mod wrong;
 
@@ -36,8 +37,8 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use domain::ports::{
     AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
-    PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
-    WorkspaceRepository, WrongItemRepository,
+    PasswordHasher, QuestionRepository, QuizRecordRepository, SkillRepository, TokenRepository,
+    UserRepository, WorkspaceRepository, WrongItemRepository,
 };
 
 use middleware::RateLimiter;
@@ -82,6 +83,7 @@ pub type PgAgentService = AgentService<
     dyn ItemRepository + Send + Sync,
     dyn QuestionRepository + Send + Sync,
     dyn EventStore + Send + Sync,
+    dyn SkillRepository + Send + Sync,
 >;
 
 /// 应用状态：全部用例服务（bootstrap 预组装注入）+ MCP 网关地址 + 限流器。
@@ -166,6 +168,14 @@ pub fn router(state: AppState) -> Router {
         .route("/papers/{id}/submit", post(paper::submit))
         .route("/agent/credential", get(agent::credential))
         .route("/agent/credential/rotate", post(agent::rotate_credential))
+        .route(
+            "/agent/skills",
+            get(skill::list_skills).post(skill::create_skill),
+        )
+        .route(
+            "/agent/skills/{id}",
+            axum::routing::delete(skill::delete_skill),
+        )
         .layer(axum_mw::from_fn_with_state(
             state.clone(),
             middleware::require_auth,

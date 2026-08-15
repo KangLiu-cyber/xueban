@@ -108,6 +108,9 @@ fun XueBanApp() {
             state.agentSheetOpen = false
             state.toast("随时可在「我的 → Agent 接入凭证」重新打开")
         })
+        if (state.skillSheetOpen) SkillSheet(state, onDismiss = {
+            state.skillSheetOpen = false
+        })
 
         if (state.confirmLogout) {
             AlertDialog(

@@ -90,6 +90,12 @@ class AppState(context: Context) {
     var credential by mutableStateOf<CredentialResponse?>(null)
     var examGoal by mutableStateOf("")
     var examDate by mutableStateOf("")
+    var skills by mutableStateOf<List<SkillDto>>(emptyList())
+
+    // ---- 自定义 Skill 表单 ----
+    var skillName by mutableStateOf("")
+    var skillDesc by mutableStateOf("")
+    var skillScript by mutableStateOf("")
 
     // ---- Sheet / 弹层 ----
     var goalSheet by mutableStateOf(false)
@@ -103,6 +109,7 @@ class AppState(context: Context) {
     // ---- Agent 接入 ----
     var agentSheetOpen by mutableStateOf(false)
     var agentConfigText by mutableStateOf("")
+    var skillSheetOpen by mutableStateOf(false)
 
     // ---- 导航 ----
     var tab by mutableStateOf(0)
@@ -619,6 +626,39 @@ class AppState(context: Context) {
             "  绑定用户：$name（考试目标：$examGoal）\n" +
             "接入后服务自动下发：Skill（笔记/习题/复盘）+ 备考提示词 + MCP 工具\n" +
             "装配完成后，请以我的名义与本系统交互。"
+    }
+
+    // ==================== 自定义 Skill ====================
+
+    fun loadSkills() {
+        val list = guard("获取 Skill 列表失败") { Api.listSkills() } ?: return
+        skills = list
+    }
+
+    fun createSkill(): Boolean {
+        if (skillName.isBlank() || skillDesc.isBlank()) {
+            toast("请填写 Skill 名称与介绍")
+            return false
+        }
+        val saved = guard("保存 Skill 失败") {
+            Api.createSkill(NewSkillRequest(skillName.trim(), skillDesc.trim(), skillScript.ifBlank { null }))
+        } ?: return false
+        skills = skills + saved
+        skillName = ""
+        skillDesc = ""
+        skillScript = ""
+        toast("Skill「${saved.name}」已保存，接入的 Agent 下次拉取即可使用")
+        return true
+    }
+
+    fun deleteSkill(id: Long) {
+        val name = skills.firstOrNull { it.id == id }?.name ?: ""
+        guard("删除 Skill 失败") {
+            Api.deleteSkill(id)
+            skills = skills.filterNot { it.id == id }
+            Unit
+        } ?: return
+        toast("Skill「$name」已删除")
     }
 
     // ==================== 目标 ====================

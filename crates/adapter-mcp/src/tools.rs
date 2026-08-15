@@ -65,13 +65,14 @@ fn map_err(e: Error) -> ErrorData {
 
 #[tool_router]
 impl McpService {
-    /// AgentBootstrap：能力包下发（Skill + 备考提示词 + 工具清单 + 内置
-    /// Skill 目录全量内容 + 版本号）。内置 skill 全量下发（含脚本），
-    /// Agent 首次接入即自动下载安装；之后可按名经 get_skill 重新拉取。
+    /// AgentBootstrap：能力包下发（Skill + 备考提示词 + 工具清单 + Skill
+    /// 目录全量内容 + 版本号）。内置与用户自定义合并（同名用户覆盖内置）
+    /// 全量下发（含脚本），Agent 首次接入即自动下载安装；之后可按名经
+    /// get_skill 重新拉取。
     #[tool(
         name = "bootstrap",
         title = "能力下发",
-        description = "获取 Agent 能力包：Skill、备考提示词、工具清单、内置 Skill 目录（全量含脚本）与版本号。连接后先调用本工具。"
+        description = "获取 Agent 能力包：Skill、备考提示词、工具清单、Skill 目录（内置与用户自定义合并，全量含脚本）与版本号。连接后先调用本工具。"
     )]
     async fn bootstrap(
         &self,
@@ -303,21 +304,22 @@ impl McpService {
             .map_err(map_err)
     }
 
-    /// GetSkill：按名拉取系统内置 skill 完整内容（含脚本），重新安装/更新用。
+    /// GetSkill：按名拉取 skill 完整内容（含脚本）。用户自定义优先，
+    /// 无同名自定义时回退系统内置目录。重新安装/更新用。
     #[tool(
         name = "get_skill",
-        title = "拉取内置 Skill",
-        description = "按名称拉取系统内置 skill 的完整内容（含脚本），用于重新安装或更新已安装的 skill。"
+        title = "拉取 Skill",
+        description = "按名称拉取 skill 的完整内容（含脚本）：用户自定义优先，无同名自定义时回退系统内置目录。用于重新安装或更新已安装的 skill。"
     )]
     async fn get_skill(
         &self,
         Extension(parts): Extension<Parts>,
         Parameters(input): Parameters<GetSkillInput>,
     ) -> Result<Json<SkillDto>, ErrorData> {
-        let _user = self.user(&parts)?;
+        let user = self.user(&parts)?;
         self.state
             .agent
-            .get_skill(&input.name)
+            .get_skill(user.id, &input.name)
             .await
             .map(SkillDto::from)
             .map(Json)

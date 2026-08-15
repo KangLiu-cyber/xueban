@@ -1,10 +1,11 @@
-# 超级学习助手 · 需求文档 v7.2（最终版）
+# 超级学习助手 · 需求文档 v7.3（最终版）
 
-日期：2026-08-14 ｜ 状态：定稿
+日期：2026-08-15 ｜ 状态：定稿
 配套原型：
 - 桌面端：`ui-mockup/desktop-prototype-v3-soft.html`
 - 安卓端：`ui-mockup/android-prototype-v1.html`（v7.2 新增，含折叠屏适配）
 
+v7.3 变更：新增客户端更新机制（第十三章）：发布新版本后用户无需重新下载安装包，客户端启动时检查更新并提示（安卓端自建 OTA，桌面端 Tauri updater，覆盖 Linux / Windows）。
 v7.2 变更：新增安卓端设计（当前只设计安卓端），含折叠屏适配策略。
 v7.1 变更：登录改为账号密码并支持注册（为订阅计费做准备）；考试目标改为手写填写（不做枚举下拉）；补充 Agent 凭证与考试目标的"再次入口"。
 
@@ -82,6 +83,12 @@ v7.1 变更：登录改为账号密码并支持注册（为订阅计费做准备
 - Skill 是**开发者内置到系统中的资产**，不是用户上传的内容：开发者把 skill（一个子文件夹一个 skill，内含 `skill.md`，含名称、介绍、脚本内容）放进仓库根 `skills/` 文件夹，后端启动时自动加载为 Skill 目录；直接编辑文件夹内文件即可更新 skill。
 - Agent **首次接入时 bootstrap 全量下发全部 skill（含脚本）**，Agent 自动下载并安装；之后可按名调 `get_skill` 重新拉取/更新。
 - Skill 目录为全局共享：所有用户接入拿到同一份清单，无用户维度区分。
+
+### 4.2 自定义 Skill（用户自建，新增）
+
+- 用户可在客户端「我的 → 自定义 Skill」保存自己的 skill（名称 + 介绍 + 脚本内容，如「链接转笔记」「习题生成」），存库按用户隔离；支持新建、列表、删除。
+- **bootstrap 下发时内置与用户自定义合并**：同名时用户自定义覆盖内置；合并后全量下发（含脚本），Agent 自动下载并安装。
+- 之后可按名调 `get_skill` 重新拉取/更新：**用户自定义优先，无同名自定义时回退内置目录**。
 
 **安全与隔离（硬性要求）**
 - 每用户一个 token，服务端所有接口凭 token 识别用户。
@@ -167,8 +174,8 @@ bootstrap（能力下发）/ create_workspace / create_item / write_item / read_
 list_items（出参 `{items: [...]}`）/ add_annotation / save_questions（出参 `{ids: [...]}`）/
 get_events（出参 `{events: [...]}`）/ report_status / get_skill。
 
-- Agent 持 token 接入时，服务端自动下发 Skill、提示词、MCP 工具清单与**内置 Skill 目录全量内容**（`bootstrap` 出参 `skills: [{name, description, script}]`，含脚本，Agent 首次接入即自动安装；版本号随能力包升级）。
-- 内置 skill 可随时按名经 `get_skill` 重新拉取（更新/修复安装），入参 `{name}`，出参 `{name, description, script}`。
+- Agent 持 token 接入时，服务端自动下发 Skill、提示词、MCP 工具清单与 **Skill 目录全量内容**（`bootstrap` 出参 `skills: [{name, description, script}]`，含脚本，Agent 首次接入即自动安装；版本号随能力包升级）。Skill 目录 = 内置 + 用户自定义合并，同名时用户自定义覆盖内置（§4.2）。
+- skill 可随时按名经 `get_skill` 重新拉取（更新/修复安装），入参 `{name}`，出参 `{name, description, script}`；**用户自定义优先，无同名自定义时回退内置目录**。
 - 所有接口按 token 识别用户，数据按用户隔离。
 - 工具出参根类型一律为 object（rmcp 要求）：数组统一包装在 `items` / `ids` / `events` 字段下。
 - 题目线格式（§8.1）：single 答案为数字索引（如 1），multi 为索引数组（如 [0,2]），judge 为布尔。
@@ -240,6 +247,61 @@ get_events（出参 `{events: [...]}`）/ report_status / get_skill。
 - 布局分支用 WindowSizeClass（Compact 单栏 / Medium 及以上双栏）。
 - 本地缓存 Room，登录态与 token 存 EncryptedSharedPreferences；MCP 交互走后端，不在端上直连。
 
-## 十三、下一步
+## 十三、客户端更新机制（v7.3 新增）
+
+目标：发布新版本后，用户无需回到官网重新下载安装包；客户端启动时静默检查更新，发现新版本即提示，用户确认后在 App 内完成下载与安装。
+
+### 13.1 检查时机
+
+- 客户端启动时异步检查一次更新清单；网络失败或清单解析失败一律静默忽略，不阻塞正常使用，也不弹出错误提示。
+- 发现新版本（桌面端比较版本号、安卓端比较 versionCode 高于当前）时弹出更新提示框：新版本号、更新说明、[立即更新] / [稍后再说]；标记为强制更新（mandatory）的版本只提供 [立即更新]。
+- 选"稍后再说"后本次启动不再提示；下次启动重新检查。
+
+### 13.2 更新清单接口
+
+- 服务端提供公开接口 `GET /api/v1/update`（无需登录），返回兼容桌面端 Tauri 静态清单格式的 JSON，同时携带安卓端所需字段：
+
+```json
+{
+  "version": "0.2.0",
+  "notes": "更新说明…",
+  "pub_date": "2026-08-15T10:00:00Z",
+  "mandatory": false,
+  "platforms": {
+    "android":        { "version_code": 200, "url": "https://…/xueban-0.2.0.apk", "sha256": "…" },
+    "linux-x86_64":   { "url": "https://…/xueban_0.2.0_amd64.AppImage", "signature": "…", "sha256": "…" },
+    "windows-x86_64": { "url": "https://…/xueban_0.2.0_x64-setup.exe", "signature": "…", "sha256": "…" }
+  }
+}
+```
+
+- 清单数据源为 GitHub Release 附件 `update.json`：CI 在打版本 tag（v*）时生成并上传；服务端启动时拉取、短 TTL 缓存（仓库公开，无需凭证）。
+- 桌面端 Tauri updater 只读取自身平台条目（signature / url）；安卓端读取 `android` 条目（version_code / sha256 / url）；两端共用同一清单接口。
+
+### 13.3 桌面端（Tauri，Linux / Windows）
+
+- 使用官方 tauri-plugin-updater：更新包用私钥签名（私钥存 CI 密钥，公钥内置在客户端配置），下载后先校验签名再安装，防篡改。
+- 覆盖 Linux（.deb / AppImage）与 Windows（NSIS 安装包）；**macOS 暂不做**（分发需付费开发者账号，当前不值得）。
+- 更新包由 CI 在打版本 tag 时构建并上传至 GitHub Release。
+
+### 13.4 安卓端（自建 OTA，暂不上商店）
+
+- 当前不通过应用商店分发，采用自建 OTA：启动时对比 versionCode → 弹更新提示 → 下载 APK（显示进度）→ sha256 校验 → 调用系统安装器安装；首次安装需引导用户开启"安装未知应用"权限。
+- 发布新版本必须使用**固定的 release 签名密钥**（存 CI 密钥）：同一签名下安装包才能覆盖升级，否则用户只能卸载重装。将来上商店后可切换为商店渠道更新。
+- APK 与清单由 CI 在打版本 tag 时构建并上传至 GitHub Release。
+
+### 13.5 发布流程
+
+```
+打 v* 标签 → CI 构建桌面端（Linux/Windows）与安卓端 release 包
+         → 生成 update.json（版本号、sha256、签名、下载地址）
+         → 上传 GitHub Release → 用户客户端下次启动自动提示更新
+```
+
+### 13.6 暂不做
+
+静默安装（后台下载后自动安装）、热更新（代码增量替换）、桌面端 v1 的强制更新策略、macOS 端更新。
+
+## 十四、下一步
 
 需求定稿 → P0 开发（优先：注册 / 登录 / 用户 token / MCP 接入与能力下发）→ 桌面端 UI 实现 → 安卓端 UI 实现（按 v1 原型）→ 闭环联调。

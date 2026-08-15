@@ -16,6 +16,7 @@ use crate::identity::{Token, TokenPurpose, User};
 use crate::practice::{
     Paper, PaperConfig, Question, QuestionType, QuizRecord, WrongItem, WrongStats,
 };
+use crate::skill::UserSkill;
 use crate::space::{Annotation, AnnotationAuthor, Item, ItemNode, Workspace};
 
 #[async_trait]
@@ -168,6 +169,19 @@ pub trait PaperRepository {
 }
 
 #[async_trait]
+pub trait SkillRepository {
+    /// 插入用户自定义 skill，返回落库后的新 id。同用户重名由存储层拒绝
+    /// （唯一约束 → Conflict）。
+    async fn insert(&self, skill: &UserSkill) -> Result<i64>;
+    /// 用户自定义 skill 清单（按 id 升序）。
+    async fn list_by_user(&self, user_id: i64) -> Result<Vec<UserSkill>>;
+    /// 按名查单个用户自定义 skill。
+    async fn find_by_name_and_user(&self, name: &str, user_id: i64) -> Result<Option<UserSkill>>;
+    /// 删除（须带归属校验），未命中返回 false。
+    async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
+}
+
+#[async_trait]
 pub trait EventStore {
     /// 追加一条事件。
     async fn append(&self, event: &Event) -> Result<i64>;
@@ -233,4 +247,12 @@ pub struct NewPaper {
     pub name: Option<String>,
     pub config: PaperConfig,
     pub question_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewSkill {
+    pub user_id: i64,
+    pub name: String,
+    pub description: String,
+    pub script: Option<String>,
 }

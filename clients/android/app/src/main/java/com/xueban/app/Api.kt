@@ -161,6 +161,16 @@ object Api {
     fun credential(): CredentialResponse = get("/agent/credential")
 
     fun rotateCredential(): CredentialResponse = post("/agent/credential/rotate", JsonObject(emptyMap()))
+
+    // ---- 自定义 Skill ----
+
+    fun listSkills(): List<SkillDto> = get("/agent/skills")
+
+    fun createSkill(input: NewSkillRequest): SkillDto = post("/agent/skills", input)
+
+    fun deleteSkill(id: Long) {
+        deleteVoid("/agent/skills/$id")
+    }
 }
 
 // ==================== DTO（字段名与后端 serde 默认 snake_case 输出一致） ====================
@@ -375,4 +385,18 @@ data class SubmitRequest(
 data class CredentialResponse(
     val token: String,
     val endpoint: String,
+)
+
+@Serializable
+data class SkillDto(
+    val id: Long,
+    val name: String,
+    val description: String,
+)
+
+@Serializable
+data class NewSkillRequest(
+    val name: String,
+    val description: String,
+    val script: String? = null,
 )
