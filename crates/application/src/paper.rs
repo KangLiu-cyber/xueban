@@ -185,7 +185,8 @@ where
             .ok_or_else(|| Error::NotFound("试卷不存在".to_owned()))
     }
 
-    /// SubmitPaper：交卷判分。每题 1 分，缺答计错；答错回流错题本。
+    /// SubmitPaper：交卷判分。每题 1 分，缺答计错；答错回流错题本，
+    /// 答对题同样落 answer 事件（模考作答全程可审计）。
     pub async fn submit(
         &self,
         user_id: i64,
@@ -205,14 +206,39 @@ where
             answers.iter().map(|a| (a.question_id, &a.chosen)).collect();
         let now = Utc::now();
         let mut correct = 0u32;
+        let mut correct_ids = Vec::new();
         let mut wrong_ids = Vec::new();
         for q in &questions {
             match answered.get(&q.id) {
-                Some(chosen) if q.judge(chosen)?.is_correct => correct += 1,
+                Some(chosen) if q.judge(chosen)?.is_correct => {
+                    correct += 1;
+                    correct_ids.push(q.id);
+                }
                 Some(_) | None => {
                     wrong_ids.push(q.id);
                 }
             }
+        }
+        // 答对题落 answer 事件（与刷题作答一致，供模考审计）。
+        for q in questions.iter().filter(|q| correct_ids.contains(&q.id)) {
+            self.events
+                .append(&Event {
+                    id: 0,
+                    user_id,
+                    workspace_id: Some(paper.workspace_id),
+                    item_id: Some(q.source_item_id),
+                    action: EventAction::Answer,
+                    payload: Some(
+                        serde_json::json!({
+                            "question_id": q.id,
+                            "paper_id": paper_id,
+                            "is_correct": true,
+                        })
+                        .to_string(),
+                    ),
+                    created_at: now,
+                })
+                .await?;
         }
         // 答错回流错题本。
         for q in questions.iter().filter(|q| wrong_ids.contains(&q.id)) {
@@ -494,13 +520,22 @@ mod tests {
         // 错题回流。
         assert!(c.svc.wrongs.find(1, c.q_ids[1]).await.unwrap().is_some());
         assert!(c.svc.wrongs.find(1, c.q_ids[2]).await.unwrap().is_some());
-        // 两道 wrong 事件。
+        // 两道 wrong 事件 + 一道 answer 事件（答对题同样可审计）。
         let events = c.svc.events.list_by_user(1, 10).await.unwrap();
         let wrong_events = events
             .iter()
             .filter(|e| e.action == EventAction::Wrong)
             .count();
         assert_eq!(wrong_events, 2);
+        let answer = events
+            .iter()
+            .find(|e| e.action == EventAction::Answer)
+            .expect("应有 answer 事件");
+        let payload: serde_json::Value =
+            serde_json::from_str(answer.payload.as_deref().unwrap()).unwrap();
+        assert_eq!(payload["question_id"], c.q_ids[0]);
+        assert_eq!(payload["paper_id"], p.paper.id);
+        assert_eq!(payload["is_correct"], true);
     }
 
     #[tokio::test]
