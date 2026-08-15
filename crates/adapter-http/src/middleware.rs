@@ -1,7 +1,8 @@
 //! 鉴权与限流中间件。
 //!
-//! `require_auth` 解析 Bearer token → 校验 → 把 `AuthUser` 注入请求扩展，
-//! 处理器经 `AuthUser` 提取器拿到 user_id（数据隔离第一道防线）。
+//! `require_auth` 解析 Bearer token → 校验（仅 client 用途 token）→ 把
+//! `AuthUser` 注入请求扩展，处理器经 `AuthUser` 提取器拿到 user_id
+//! （数据隔离第一道防线）。
 //! 限流为固定窗口：注册/登录按 IP（30/min），其余按 token（300/min），
 //! 无 token 时退化为 IP。
 
@@ -92,7 +93,11 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
     let Some(token) = bearer_token(req.headers()) else {
         return crate::error::unauthorized();
     };
-    match state.auth.authenticate(&token).await {
+    match state
+        .auth
+        .authenticate(&token, domain::identity::TokenPurpose::Client)
+        .await
+    {
         Ok(user) => {
             req.extensions_mut().insert(AuthUser(user));
             next.run(req).await

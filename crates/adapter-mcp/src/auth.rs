@@ -1,6 +1,7 @@
 //! MCP 网关鉴权与限流中间件（架构文档 §8.2 强制规则）。
 //!
-//! 连接建立时校验 Bearer token → 把 `AuthUser` 注入请求扩展；rmcp 将
+//! 连接建立时校验 Bearer token（仅 agent 用途 token，client token 拒绝）→
+//! 把 `AuthUser` 注入请求扩展；rmcp 将
 //! http Parts（含扩展）拷入 JSON-RPC 消息扩展，工具经 `Extension<Parts>`
 //! 取回用户上下文——工具入参中不存在用户身份字段（§10 数据隔离）。
 //! 限流为固定窗口，按 token 60 次/分钟（§8.2 强制规则）。
@@ -92,7 +93,11 @@ pub async fn require_auth(State(state): State<McpState>, mut req: Request, next:
     if !state.limiter.check(&key, MCP_LIMIT, WINDOW) {
         return error_response(StatusCode::TOO_MANY_REQUESTS, "请求过于频繁，请稍后再试");
     }
-    match state.auth.authenticate(&token).await {
+    match state
+        .auth
+        .authenticate(&token, domain::identity::TokenPurpose::Agent)
+        .await
+    {
         Ok(user) => {
             req.extensions_mut().insert(AuthUser(user));
             next.run(req).await

@@ -93,8 +93,9 @@ where
         Ok(())
     }
 
-    /// 鉴权辅助：解析 token 并返回用户。驱动适配器统一经此解析身份。
-    pub async fn authenticate(&self, token: &str) -> Result<User> {
+    /// 鉴权辅助：解析 token、校验用途并返回用户。驱动适配器统一经此解析身份；
+    /// 用途不符（agent token 调 REST、client token 调 MCP）按凭证无效拒绝。
+    pub async fn authenticate(&self, token: &str, purpose: TokenPurpose) -> Result<User> {
         let t = self
             .tokens
             .find_by_token(token)
@@ -102,6 +103,9 @@ where
             .ok_or_else(|| Error::NotFound("凭证无效".to_owned()))?;
         if t.is_revoked() {
             return Err(Error::Invalid("凭证已吊销".to_owned()));
+        }
+        if t.purpose != purpose {
+            return Err(Error::Invalid("凭证无效".to_owned()));
         }
         self.users
             .find_by_id(t.user_id)
@@ -203,8 +207,16 @@ mod tests {
         let second = s.login("alice", "password1").await.unwrap();
         assert_ne!(first.token, second.token);
         // 旧 client token 已吊销，新 token 有效。
-        assert!(s.authenticate(&first.token).await.is_err());
-        assert!(s.authenticate(&second.token).await.is_ok());
+        assert!(
+            s.authenticate(&first.token, TokenPurpose::Client)
+                .await
+                .is_err()
+        );
+        assert!(
+            s.authenticate(&second.token, TokenPurpose::Client)
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -228,7 +240,7 @@ mod tests {
         let (_, token) = s.register("alice", "password1", None).await.unwrap();
         s.logout(&token.token).await.unwrap();
         assert!(matches!(
-            s.authenticate(&token.token).await,
+            s.authenticate(&token.token, TokenPurpose::Client).await,
             Err(Error::Invalid(_))
         ));
         // 重复注销不报错。
@@ -239,9 +251,38 @@ mod tests {
     async fn authenticate_rejects_unknown_token() {
         let s = svc();
         assert!(matches!(
-            s.authenticate("usr_nonexistent").await,
+            s.authenticate("usr_nonexistent", TokenPurpose::Client)
+                .await,
             Err(Error::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn authenticate_enforces_token_purpose() {
+        let s = svc();
+        let (user, client_token) = s.register("alice", "password1", None).await.unwrap();
+        let agent_token = s.rotate_agent_token(user.id).await.unwrap();
+        // client token 不能通过 agent 用途鉴权，反之亦然。
+        assert!(
+            s.authenticate(&client_token.token, TokenPurpose::Client)
+                .await
+                .is_ok()
+        );
+        assert!(
+            s.authenticate(&client_token.token, TokenPurpose::Agent)
+                .await
+                .is_err()
+        );
+        assert!(
+            s.authenticate(&agent_token.token, TokenPurpose::Agent)
+                .await
+                .is_ok()
+        );
+        assert!(
+            s.authenticate(&agent_token.token, TokenPurpose::Client)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -270,8 +311,16 @@ mod tests {
         assert_eq!(first.purpose, TokenPurpose::Agent);
         let second = s.rotate_agent_token(user.id).await.unwrap();
         assert_ne!(first.token, second.token);
-        assert!(s.authenticate(&first.token).await.is_err());
-        assert!(s.authenticate(&second.token).await.is_ok());
+        assert!(
+            s.authenticate(&first.token, TokenPurpose::Agent)
+                .await
+                .is_err()
+        );
+        assert!(
+            s.authenticate(&second.token, TokenPurpose::Agent)
+                .await
+                .is_ok()
+        );
         // client token 不受影响。
         assert!(s.login("alice", "password1").await.is_ok());
     }

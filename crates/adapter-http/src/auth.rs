@@ -75,7 +75,10 @@ pub async fn login(
     JsonBody(body): JsonBody<LoginRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
     let token = state.auth.login(&body.account, &body.password).await?;
-    let user = state.auth.authenticate(&token.token).await?;
+    let user = state
+        .auth
+        .authenticate(&token.token, domain::identity::TokenPurpose::Client)
+        .await?;
     Ok(Json(AuthResponse {
         token: token.token,
         user: user.into(),
