@@ -95,14 +95,14 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           cd clients/desktop && XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build
-      - name: 上传安装包
+      - name: 上传安装包（clients/ 是独立 workspace，cargo 产物在 clients/target 下）
         uses: actions/upload-artifact@v4
         with:
           name: xueban-desktop
           if-no-files-found: error
           path: |
-            clients/desktop/target/release/bundle/deb/*.deb
-            clients/desktop/target/release/bundle/appimage/*.AppImage
+            clients/target/release/bundle/deb/*.deb
+            clients/target/release/bundle/appimage/*.AppImage
 
   release:
     name: 发布 GitHub Release
