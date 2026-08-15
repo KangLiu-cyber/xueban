@@ -3,6 +3,7 @@
 //! 每个仓储独立持有 `Mutex<HashMap>`，id 用 `AtomicI64` 自增；
 //! 与 SQLx 适配器语义对齐：insert 返回新 id、查询按归属过滤、删除返回是否命中。
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -32,6 +33,7 @@ pub struct InMemoryUserRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl UserRepository for InMemoryUserRepository {
     async fn insert(&self, user: &User) -> domain::Result<i64> {
         let id = take_id(&self.next_id);
@@ -62,6 +64,7 @@ pub struct InMemoryTokenRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl TokenRepository for InMemoryTokenRepository {
     async fn insert(&self, token: &Token) -> domain::Result<i64> {
         let id = take_id(&self.next_id);
@@ -134,6 +137,7 @@ pub struct InMemoryWorkspaceRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl WorkspaceRepository for InMemoryWorkspaceRepository {
     async fn insert(&self, ws: &Workspace) -> domain::Result<i64> {
         let id = take_id(&self.next_id);
@@ -200,6 +204,7 @@ impl InMemoryItemRepository {
     }
 }
 
+#[async_trait]
 impl ItemRepository for InMemoryItemRepository {
     async fn insert(&self, item: &Item) -> domain::Result<i64> {
         let id = take_id(&self.next_id);
@@ -267,6 +272,7 @@ pub struct InMemoryAnnotationRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl AnnotationRepository for InMemoryAnnotationRepository {
     async fn insert(&self, ann: &Annotation) -> domain::Result<i64> {
         let id = take_id(&self.next_id);
@@ -305,6 +311,7 @@ pub struct InMemoryQuestionRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl QuestionRepository for InMemoryQuestionRepository {
     async fn insert_many(&self, questions: &[Question]) -> domain::Result<Vec<i64>> {
         let mut map = self.questions.lock().unwrap();
@@ -356,6 +363,7 @@ pub struct InMemoryQuizRecordRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl QuizRecordRepository for InMemoryQuizRecordRepository {
     async fn append(&self, record: &QuizRecord) -> domain::Result<i64> {
         let id = take_id(&self.next_id);
@@ -372,6 +380,7 @@ pub struct InMemoryWrongItemRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl WrongItemRepository for InMemoryWrongItemRepository {
     async fn find(&self, user_id: i64, question_id: i64) -> domain::Result<Option<WrongItem>> {
         Ok(self
@@ -486,6 +495,7 @@ pub struct InMemoryPaperRepository {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl PaperRepository for InMemoryPaperRepository {
     async fn insert(&self, paper: &Paper) -> domain::Result<i64> {
         let id = take_id(&self.next_id);
@@ -517,6 +527,7 @@ pub struct InMemoryEventStore {
     next_id: AtomicI64,
 }
 
+#[async_trait]
 impl EventStore for InMemoryEventStore {
     async fn append(&self, event: &Event) -> domain::Result<i64> {
         let id = take_id(&self.next_id);

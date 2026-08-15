@@ -7,23 +7,91 @@
 mod common;
 
 use adapter_http::{AppState, router};
-use adapter_postgres::{PgItemRepository, PgQuestionRepository};
+use adapter_postgres::{
+    Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
+    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgTokenRepository,
+    PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository, RandomCredentialIssuer,
+};
+use application::agent::AgentService;
+use application::auth::AuthService;
+use application::paper::PaperService;
+use application::quiz::QuizService;
+use application::space::SpaceService;
+use application::wrong::WrongService;
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use chrono::Utc;
-use domain::ports::{ItemRepository, QuestionRepository};
+use domain::ports::{
+    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
+    PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
+    WorkspaceRepository, WrongItemRepository,
+};
 use domain::practice::{Answer, Question, QuestionType};
 use domain::space::{Creator, Item, ItemKind};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use tower::ServiceExt;
 
+/// 与 bootstrap 相同的六边形组装（P1-10）：仓储 → 用例服务 → 注入 REST 适配器。
 async fn app() -> Option<Router> {
     let pool = common::pool().await?;
     common::setup(&pool).await;
+    let users: Arc<dyn UserRepository + Send + Sync> =
+        Arc::new(PgUserRepository::new(pool.clone()));
+    let tokens: Arc<dyn TokenRepository + Send + Sync> =
+        Arc::new(PgTokenRepository::new(pool.clone()));
+    let hasher: Arc<dyn PasswordHasher + Send + Sync> = Arc::new(Argon2PasswordHasher);
+    let issuer: Arc<dyn CredentialIssuer + Send + Sync> = Arc::new(RandomCredentialIssuer);
+    let workspaces: Arc<dyn WorkspaceRepository + Send + Sync> =
+        Arc::new(PgWorkspaceRepository::new(pool.clone()));
+    let items: Arc<dyn ItemRepository + Send + Sync> =
+        Arc::new(PgItemRepository::new(pool.clone()));
+    let annotations: Arc<dyn AnnotationRepository + Send + Sync> =
+        Arc::new(PgAnnotationRepository::new(pool.clone()));
+    let questions: Arc<dyn QuestionRepository + Send + Sync> =
+        Arc::new(PgQuestionRepository::new(pool.clone()));
+    let quiz_records: Arc<dyn QuizRecordRepository + Send + Sync> =
+        Arc::new(PgQuizRecordRepository::new(pool.clone()));
+    let wrong_items: Arc<dyn WrongItemRepository + Send + Sync> =
+        Arc::new(PgWrongItemRepository::new(pool.clone()));
+    let papers: Arc<dyn PaperRepository + Send + Sync> =
+        Arc::new(PgPaperRepository::new(pool.clone()));
+    let events: Arc<dyn EventStore + Send + Sync> = Arc::new(PgEventStore::new(pool));
+
+    let auth = Arc::new(AuthService::new(users, tokens, hasher, issuer));
+    let space = Arc::new(SpaceService::new(
+        workspaces.clone(),
+        items.clone(),
+        annotations,
+        events.clone(),
+    ));
+    let quiz = Arc::new(QuizService::new(
+        workspaces.clone(),
+        items.clone(),
+        questions.clone(),
+        quiz_records,
+        wrong_items.clone(),
+        events.clone(),
+    ));
+    let wrong = Arc::new(WrongService::new(wrong_items.clone(), questions.clone()));
+    let paper = Arc::new(PaperService::new(
+        workspaces.clone(),
+        items.clone(),
+        questions.clone(),
+        papers,
+        wrong_items,
+        events.clone(),
+    ));
+    let agent = Arc::new(AgentService::new(workspaces, items, questions, events));
     Some(router(AppState::new(
-        pool,
+        auth,
+        space,
+        quiz,
+        wrong,
+        paper,
+        agent,
         "https://mcp.example.com/mcp".into(),
     )))
 }

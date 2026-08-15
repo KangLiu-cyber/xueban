@@ -2,40 +2,52 @@
 //!
 //! 经 rmcp streamable-http 暴露 10 个工具（见 tools.rs）；/mcp 全路由挂
 //! `require_auth` 中间件：先按 token 限流（60/min）再校验 token，通过后
-//! 注入 `AuthUser`，工具从请求扩展取回用户上下文。应用服务在此独立组装
-//! （与 adapter-http 各自持有仓储组合，互不依赖）。
+//! 注入 `AuthUser`，工具从请求扩展取回用户上下文。用例服务由 bootstrap
+//! 预组装注入（P1-10：仓储实例化上移 bootstrap，本适配器只依赖
+//! application 用例与 domain 端口）。
 
 pub mod auth;
 pub mod tools;
 
 use std::sync::Arc;
 
-use adapter_postgres::{
-    Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
-    PgQuestionRepository, PgTokenRepository, PgUserRepository, PgWorkspaceRepository,
-    RandomCredentialIssuer,
-};
 use application::agent::AgentService;
 use application::auth::AuthService;
 use application::space::SpaceService;
 use axum::Router;
 use axum::middleware as axum_mw;
+use domain::ports::{
+    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PasswordHasher,
+    QuestionRepository, TokenRepository, UserRepository, WorkspaceRepository,
+};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 
 use crate::auth::RateLimiter;
 use crate::tools::McpService;
 
-pub type PgAuthService =
-    AuthService<PgUserRepository, PgTokenRepository, Argon2PasswordHasher, RandomCredentialIssuer>;
+pub type PgAuthService = AuthService<
+    dyn UserRepository + Send + Sync,
+    dyn TokenRepository + Send + Sync,
+    dyn PasswordHasher + Send + Sync,
+    dyn CredentialIssuer + Send + Sync,
+>;
 
-pub type PgSpaceService =
-    SpaceService<PgWorkspaceRepository, PgItemRepository, PgAnnotationRepository, PgEventStore>;
+pub type PgSpaceService = SpaceService<
+    dyn WorkspaceRepository + Send + Sync,
+    dyn ItemRepository + Send + Sync,
+    dyn AnnotationRepository + Send + Sync,
+    dyn EventStore + Send + Sync,
+>;
 
-pub type PgAgentService =
-    AgentService<PgWorkspaceRepository, PgItemRepository, PgQuestionRepository, PgEventStore>;
+pub type PgAgentService = AgentService<
+    dyn WorkspaceRepository + Send + Sync,
+    dyn ItemRepository + Send + Sync,
+    dyn QuestionRepository + Send + Sync,
+    dyn EventStore + Send + Sync,
+>;
 
-/// MCP 网关状态：鉴权服务 + 空间/Agent 服务 + 限流器（bootstrap 组装注入）。
+/// MCP 网关状态：鉴权服务 + 空间/Agent 服务（bootstrap 预组装注入）+ 限流器。
 #[derive(Clone)]
 pub struct McpState {
     pub auth: Arc<PgAuthService>,
@@ -45,27 +57,16 @@ pub struct McpState {
 }
 
 impl McpState {
-    /// 以同一连接池构造全部服务。
-    pub fn new(pool: sqlx::PgPool) -> Self {
+    /// 接收 bootstrap 注入的预组装服务。
+    pub fn new(
+        auth: Arc<PgAuthService>,
+        space: Arc<PgSpaceService>,
+        agent: Arc<PgAgentService>,
+    ) -> Self {
         Self {
-            auth: Arc::new(AuthService::new(
-                Arc::new(PgUserRepository::new(pool.clone())),
-                Arc::new(PgTokenRepository::new(pool.clone())),
-                Arc::new(Argon2PasswordHasher),
-                Arc::new(RandomCredentialIssuer),
-            )),
-            space: Arc::new(SpaceService::new(
-                Arc::new(PgWorkspaceRepository::new(pool.clone())),
-                Arc::new(PgItemRepository::new(pool.clone())),
-                Arc::new(PgAnnotationRepository::new(pool.clone())),
-                Arc::new(PgEventStore::new(pool.clone())),
-            )),
-            agent: Arc::new(AgentService::new(
-                Arc::new(PgWorkspaceRepository::new(pool.clone())),
-                Arc::new(PgItemRepository::new(pool.clone())),
-                Arc::new(PgQuestionRepository::new(pool.clone())),
-                Arc::new(PgEventStore::new(pool)),
-            )),
+            auth,
+            space,
+            agent,
             limiter: Arc::new(RateLimiter::default()),
         }
     }

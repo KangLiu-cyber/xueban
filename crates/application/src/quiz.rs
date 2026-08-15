@@ -48,12 +48,12 @@ pub struct AnswerOutcome {
 
 pub struct QuizService<W, I, Q, R, B, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    Q: QuestionRepository,
-    R: QuizRecordRepository,
-    B: WrongItemRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
+    R: QuizRecordRepository + ?Sized,
+    B: WrongItemRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     workspaces: Arc<W>,
     items: Arc<I>,
@@ -65,12 +65,12 @@ where
 
 impl<W, I, Q, R, B, E> QuizService<W, I, Q, R, B, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    Q: QuestionRepository,
-    R: QuizRecordRepository,
-    B: WrongItemRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
+    R: QuizRecordRepository + ?Sized,
+    B: WrongItemRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     pub fn new(
         workspaces: Arc<W>,

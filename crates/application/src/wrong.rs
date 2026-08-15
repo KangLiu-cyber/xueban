@@ -24,8 +24,8 @@ pub struct WrongListItem {
 
 pub struct WrongService<B, Q>
 where
-    B: WrongItemRepository,
-    Q: QuestionRepository,
+    B: WrongItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
 {
     wrongs: Arc<B>,
     questions: Arc<Q>,
@@ -33,8 +33,8 @@ where
 
 impl<B, Q> WrongService<B, Q>
 where
-    B: WrongItemRepository,
-    Q: QuestionRepository,
+    B: WrongItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
 {
     pub fn new(wrongs: Arc<B>, questions: Arc<Q>) -> Self {
         Self { wrongs, questions }

@@ -6,7 +6,10 @@ edition = "2024"
 [dependencies]
 adapter-http = { path = "../adapter-http" }
 adapter-mcp = { path = "../adapter-mcp" }
+adapter-postgres = { path = "../adapter-postgres" }
+application = { path = "../application" }
 axum = "0.8"
+domain = { path = "../domain" }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 tracing = "0.1"

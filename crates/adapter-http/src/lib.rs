@@ -8,6 +8,10 @@
 //!
 //! Logout 为公开路由：吊销后的 token 已无法通过鉴权中间件，但注销必须
 //! 幂等可用，故该处理器直接读 Authorization 头并调用服务。
+//!
+//! 六边形组装（P1-10）：本适配器只依赖 application 用例与 domain 端口，
+//! 仓储具体实现由 bootstrap 实例化并注入；服务句柄为
+//! `Arc<dyn Trait + Send + Sync>` trait 对象，不反向依赖 adapter-postgres。
 
 pub mod agent;
 pub mod auth;
@@ -20,11 +24,6 @@ pub mod wrong;
 
 use std::sync::Arc;
 
-use adapter_postgres::{
-    Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
-    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgTokenRepository,
-    PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository, RandomCredentialIssuer,
-};
 use application::agent::AgentService;
 use application::auth::AuthService;
 use application::paper::PaperService;
@@ -34,39 +33,57 @@ use application::wrong::WrongService;
 use axum::Router;
 use axum::middleware as axum_mw;
 use axum::routing::{delete, get, post, put};
+use domain::ports::{
+    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
+    PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
+    WorkspaceRepository, WrongItemRepository,
+};
 
 use middleware::RateLimiter;
 
-pub type PgAuthService =
-    AuthService<PgUserRepository, PgTokenRepository, Argon2PasswordHasher, RandomCredentialIssuer>;
+pub type PgAuthService = AuthService<
+    dyn UserRepository + Send + Sync,
+    dyn TokenRepository + Send + Sync,
+    dyn PasswordHasher + Send + Sync,
+    dyn CredentialIssuer + Send + Sync,
+>;
 
-pub type PgSpaceService =
-    SpaceService<PgWorkspaceRepository, PgItemRepository, PgAnnotationRepository, PgEventStore>;
+pub type PgSpaceService = SpaceService<
+    dyn WorkspaceRepository + Send + Sync,
+    dyn ItemRepository + Send + Sync,
+    dyn AnnotationRepository + Send + Sync,
+    dyn EventStore + Send + Sync,
+>;
 
 pub type PgQuizService = QuizService<
-    PgWorkspaceRepository,
-    PgItemRepository,
-    PgQuestionRepository,
-    PgQuizRecordRepository,
-    PgWrongItemRepository,
-    PgEventStore,
+    dyn WorkspaceRepository + Send + Sync,
+    dyn ItemRepository + Send + Sync,
+    dyn QuestionRepository + Send + Sync,
+    dyn QuizRecordRepository + Send + Sync,
+    dyn WrongItemRepository + Send + Sync,
+    dyn EventStore + Send + Sync,
 >;
 
-pub type PgWrongService = WrongService<PgWrongItemRepository, PgQuestionRepository>;
+pub type PgWrongService =
+    WrongService<dyn WrongItemRepository + Send + Sync, dyn QuestionRepository + Send + Sync>;
 
 pub type PgPaperService = PaperService<
-    PgWorkspaceRepository,
-    PgItemRepository,
-    PgQuestionRepository,
-    PgPaperRepository,
-    PgWrongItemRepository,
-    PgEventStore,
+    dyn WorkspaceRepository + Send + Sync,
+    dyn ItemRepository + Send + Sync,
+    dyn QuestionRepository + Send + Sync,
+    dyn PaperRepository + Send + Sync,
+    dyn WrongItemRepository + Send + Sync,
+    dyn EventStore + Send + Sync,
 >;
 
-pub type PgAgentService =
-    AgentService<PgWorkspaceRepository, PgItemRepository, PgQuestionRepository, PgEventStore>;
+pub type PgAgentService = AgentService<
+    dyn WorkspaceRepository + Send + Sync,
+    dyn ItemRepository + Send + Sync,
+    dyn QuestionRepository + Send + Sync,
+    dyn EventStore + Send + Sync,
+>;
 
-/// 应用状态：全部具体服务 + MCP 网关地址 + 限流器（bootstrap 组装注入）。
+/// 应用状态：全部用例服务（bootstrap 预组装注入）+ MCP 网关地址 + 限流器。
 #[derive(Clone)]
 pub struct AppState {
     pub auth: Arc<PgAuthService>,
@@ -80,48 +97,24 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// 以同一连接池构造全部服务；mcp_endpoint 为 MCP 网关对外地址，
+    /// 接收 bootstrap 注入的预组装服务；mcp_endpoint 为 MCP 网关对外地址，
     /// 经凭证端点随 token 下发给 Agent。
-    pub fn new(pool: sqlx::PgPool, mcp_endpoint: String) -> Self {
+    pub fn new(
+        auth: Arc<PgAuthService>,
+        space: Arc<PgSpaceService>,
+        quiz: Arc<PgQuizService>,
+        wrong: Arc<PgWrongService>,
+        paper: Arc<PgPaperService>,
+        agent: Arc<PgAgentService>,
+        mcp_endpoint: String,
+    ) -> Self {
         Self {
-            auth: Arc::new(AuthService::new(
-                Arc::new(PgUserRepository::new(pool.clone())),
-                Arc::new(PgTokenRepository::new(pool.clone())),
-                Arc::new(Argon2PasswordHasher),
-                Arc::new(RandomCredentialIssuer),
-            )),
-            space: Arc::new(SpaceService::new(
-                Arc::new(PgWorkspaceRepository::new(pool.clone())),
-                Arc::new(PgItemRepository::new(pool.clone())),
-                Arc::new(PgAnnotationRepository::new(pool.clone())),
-                Arc::new(PgEventStore::new(pool.clone())),
-            )),
-            quiz: Arc::new(QuizService::new(
-                Arc::new(PgWorkspaceRepository::new(pool.clone())),
-                Arc::new(PgItemRepository::new(pool.clone())),
-                Arc::new(PgQuestionRepository::new(pool.clone())),
-                Arc::new(PgQuizRecordRepository::new(pool.clone())),
-                Arc::new(PgWrongItemRepository::new(pool.clone())),
-                Arc::new(PgEventStore::new(pool.clone())),
-            )),
-            wrong: Arc::new(WrongService::new(
-                Arc::new(PgWrongItemRepository::new(pool.clone())),
-                Arc::new(PgQuestionRepository::new(pool.clone())),
-            )),
-            paper: Arc::new(PaperService::new(
-                Arc::new(PgWorkspaceRepository::new(pool.clone())),
-                Arc::new(PgItemRepository::new(pool.clone())),
-                Arc::new(PgQuestionRepository::new(pool.clone())),
-                Arc::new(PgPaperRepository::new(pool.clone())),
-                Arc::new(PgWrongItemRepository::new(pool.clone())),
-                Arc::new(PgEventStore::new(pool.clone())),
-            )),
-            agent: Arc::new(AgentService::new(
-                Arc::new(PgWorkspaceRepository::new(pool.clone())),
-                Arc::new(PgItemRepository::new(pool.clone())),
-                Arc::new(PgQuestionRepository::new(pool.clone())),
-                Arc::new(PgEventStore::new(pool)),
-            )),
+            auth,
+            space,
+            quiz,
+            wrong,
+            paper,
+            agent,
             mcp_endpoint,
             limiter: Arc::new(RateLimiter::default()),
         }

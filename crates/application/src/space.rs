@@ -14,10 +14,10 @@ use serde::Serialize;
 
 pub struct SpaceService<W, I, A, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    A: AnnotationRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    A: AnnotationRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     workspaces: Arc<W>,
     items: Arc<I>,
@@ -27,10 +27,10 @@ where
 
 impl<W, I, A, E> SpaceService<W, I, A, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    A: AnnotationRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    A: AnnotationRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     pub fn new(workspaces: Arc<W>, items: Arc<I>, annotations: Arc<A>, events: Arc<E>) -> Self {
         Self {

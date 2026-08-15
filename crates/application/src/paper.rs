@@ -38,12 +38,12 @@ pub struct PaperBundle {
 
 pub struct PaperService<W, I, Q, P, B, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    Q: QuestionRepository,
-    P: PaperRepository,
-    B: WrongItemRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
+    P: PaperRepository + ?Sized,
+    B: WrongItemRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     workspaces: Arc<W>,
     items: Arc<I>,
@@ -55,12 +55,12 @@ where
 
 impl<W, I, Q, P, B, E> PaperService<W, I, Q, P, B, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    Q: QuestionRepository,
-    P: PaperRepository,
-    B: WrongItemRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
+    P: PaperRepository + ?Sized,
+    B: WrongItemRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     pub fn new(
         workspaces: Arc<W>,

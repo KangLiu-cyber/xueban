@@ -3,6 +3,7 @@
 //! 读路径在 SQL 层强制 user_id 归属（workspaces join），作为隔离第二道防线；
 //! 写路径由应用层先完成归属校验，此处按 id 幂等写入。
 
+use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 use domain::error::{Error, Result};
 use domain::ports::{AnnotationRepository, ItemRepository, WorkspaceRepository};
@@ -22,6 +23,7 @@ impl PgWorkspaceRepository {
     }
 }
 
+#[async_trait]
 impl WorkspaceRepository for PgWorkspaceRepository {
     async fn insert(&self, ws: &Workspace) -> Result<i64> {
         let row = sqlx::query(
@@ -107,6 +109,7 @@ impl PgItemRepository {
     }
 }
 
+#[async_trait]
 impl ItemRepository for PgItemRepository {
     async fn insert(&self, item: &Item) -> Result<i64> {
         let row = sqlx::query(
@@ -301,6 +304,7 @@ impl PgAnnotationRepository {
     }
 }
 
+#[async_trait]
 impl AnnotationRepository for PgAnnotationRepository {
     async fn insert(&self, ann: &Annotation) -> Result<i64> {
         let row = sqlx::query(

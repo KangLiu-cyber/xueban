@@ -3,12 +3,11 @@
 //! 与 docs/architecture.md §5.2 端口清单一致。仓储查询必须携带
 //! user_id/workspace_id 归属条件——实现侧在 SQL 层强制，作为隔离第二道防线。
 //!
-//! 仓储方法均为原生 `async fn in trait`（Rust 2024 稳定特性）。
-//! 调用方只在 request 处理路径直接 await，从不跨线程 spawn，
-//! 故不要求 future 为 Send，此处统一允许该 lint。
+//! 仓储方法用 `#[async_trait]`（纯语法宏，仅把 async fn 展开为
+//! boxed future）以获得 dyn 兼容性——bootstrap 以 `Arc<dyn Trait>`
+//! 组装注入（P1-10），适配器与用例服务均不依赖具体仓储实现。
 
-#![allow(async_fn_in_trait)]
-
+use async_trait::async_trait;
 use chrono::{DateTime, NaiveDate, Utc};
 
 use crate::error::Result;
@@ -19,6 +18,7 @@ use crate::practice::{
 };
 use crate::space::{Annotation, AnnotationAuthor, Item, ItemNode, Workspace};
 
+#[async_trait]
 pub trait UserRepository {
     /// 插入用户，返回落库后的新 id。
     async fn insert(&self, user: &User) -> Result<i64>;
@@ -26,6 +26,7 @@ pub trait UserRepository {
     async fn find_by_id(&self, id: i64) -> Result<Option<User>>;
 }
 
+#[async_trait]
 pub trait TokenRepository {
     /// 插入 token，返回落库后的新 id。
     async fn insert(&self, token: &Token) -> Result<i64>;
@@ -48,6 +49,7 @@ pub trait TokenRepository {
     ) -> Result<()>;
 }
 
+#[async_trait]
 pub trait WorkspaceRepository {
     /// 插入空间，返回落库后的新 id。
     async fn insert(&self, ws: &Workspace) -> Result<i64>;
@@ -59,6 +61,7 @@ pub trait WorkspaceRepository {
     async fn update(&self, ws: &Workspace) -> Result<()>;
 }
 
+#[async_trait]
 pub trait ItemRepository {
     /// 插入节点，返回落库后的新 id。
     async fn insert(&self, item: &Item) -> Result<i64>;
@@ -73,6 +76,7 @@ pub trait ItemRepository {
     async fn ancestors(&self, item_id: i64) -> Result<Vec<i64>>;
 }
 
+#[async_trait]
 pub trait AnnotationRepository {
     /// 插入批注，返回落库后的新 id。
     async fn insert(&self, ann: &Annotation) -> Result<i64>;
@@ -82,6 +86,7 @@ pub trait AnnotationRepository {
     async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
 }
 
+#[async_trait]
 pub trait QuestionRepository {
     /// 批量写入题目（单批 ≤ 200，协议层校验），返回落库后的 id 列表。
     async fn insert_many(&self, questions: &[Question]) -> Result<Vec<i64>>;
@@ -97,11 +102,13 @@ pub trait QuestionRepository {
     ) -> Result<Vec<Question>>;
 }
 
+#[async_trait]
 pub trait QuizRecordRepository {
     /// 只追加一条作答记录，返回落库后的新 id。
     async fn append(&self, record: &QuizRecord) -> Result<i64>;
 }
 
+#[async_trait]
 pub trait WrongItemRepository {
     /// 按 (user, question) 查错题。
     async fn find(&self, user_id: i64, question_id: i64) -> Result<Option<WrongItem>>;
@@ -133,6 +140,7 @@ pub trait WrongItemRepository {
     async fn stats(&self, user_id: i64, week_ago: DateTime<Utc>) -> Result<WrongStats>;
 }
 
+#[async_trait]
 pub trait PaperRepository {
     /// 插入试卷（含题目快照），返回落库后的新 id。
     async fn insert(&self, paper: &Paper) -> Result<i64>;
@@ -142,6 +150,7 @@ pub trait PaperRepository {
     async fn submit(&self, paper: &Paper) -> Result<()>;
 }
 
+#[async_trait]
 pub trait EventStore {
     /// 追加一条事件。
     async fn append(&self, event: &Event) -> Result<i64>;

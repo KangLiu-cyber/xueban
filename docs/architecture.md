@@ -184,7 +184,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 └── docs/                        # 架构 / 需求文档与 UI 原型
 ```
 
-依赖方向：`bootstrap → adapter-* → application → domain`；`domain` 不依赖 workspace 内任何其他 crate。CI 中用 cargo deny / 依赖检查守住 domain 的纯净边界。
+依赖方向：`bootstrap → adapter-* → application → domain`；`domain` 不依赖 workspace 内任何其他 crate。CI 中用 cargo deny / 依赖检查守住 domain 的纯净边界。领域层「零框架依赖」指不引入运行时框架；`async-trait` 等纯语法宏（仅把 async fn 展开为 boxed future，换取端口 dyn 兼容性，供 bootstrap 以 `Arc<dyn Trait>` 组装注入）允许。
 
 前端：UI 代码只有一份（`web`），编译 WASM 供浏览器直接运行，Tauri 壳加载同一构建产物，`desktop → web` 建立链接；`clients/` 独立 workspace，避免 wasm target 与 Tauri 原生依赖拖累后端编译循环。安卓端（Kotlin）与 Rust 前端独立，仅共用后端 API。
 

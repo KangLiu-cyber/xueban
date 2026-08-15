@@ -11,10 +11,10 @@ use domain::ports::{CredentialIssuer, PasswordHasher, TokenRepository, UserRepos
 
 pub struct AuthService<U, T, H, I>
 where
-    U: UserRepository,
-    T: TokenRepository,
-    H: PasswordHasher,
-    I: CredentialIssuer,
+    U: UserRepository + ?Sized,
+    T: TokenRepository + ?Sized,
+    H: PasswordHasher + ?Sized,
+    I: CredentialIssuer + ?Sized,
 {
     users: Arc<U>,
     tokens: Arc<T>,
@@ -24,10 +24,10 @@ where
 
 impl<U, T, H, I> AuthService<U, T, H, I>
 where
-    U: UserRepository,
-    T: TokenRepository,
-    H: PasswordHasher,
-    I: CredentialIssuer,
+    U: UserRepository + ?Sized,
+    T: TokenRepository + ?Sized,
+    H: PasswordHasher + ?Sized,
+    I: CredentialIssuer + ?Sized,
 {
     pub fn new(users: Arc<U>, tokens: Arc<T>, hasher: Arc<H>, issuer: Arc<I>) -> Self {
         Self {

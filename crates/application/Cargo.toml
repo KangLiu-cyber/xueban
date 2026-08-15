@@ -11,4 +11,5 @@ chrono = { version = "0.4", features = ["serde"] }
 schemars = { version = "1", features = ["derive", "chrono04"] }
 
 [dev-dependencies]
+async-trait = "0.1"
 tokio = { version = "1", features = ["macros", "rt"] }

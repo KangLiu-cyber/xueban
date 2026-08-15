@@ -7,6 +7,7 @@ use argon2::password_hash::{
     PasswordHash, PasswordVerifier, SaltString, rand_core::OsRng as ArgonOsRng,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use domain::error::{Error, Result};
 use domain::identity::{Token, TokenPurpose, User};
@@ -27,6 +28,7 @@ impl PgUserRepository {
     }
 }
 
+#[async_trait]
 impl UserRepository for PgUserRepository {
     async fn insert(&self, user: &User) -> Result<i64> {
         let row = sqlx::query(
@@ -98,6 +100,7 @@ impl PgTokenRepository {
     }
 }
 
+#[async_trait]
 impl TokenRepository for PgTokenRepository {
     async fn insert(&self, token: &Token) -> Result<i64> {
         let row = sqlx::query(

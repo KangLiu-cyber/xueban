@@ -4,10 +4,31 @@
 //! - `DATABASE_URL`：PostgreSQL 连接串（必填）；
 //! - `BIND_ADDR`：监听地址，默认 `127.0.0.1:8080`；
 //! - `MCP_ENDPOINT`：MCP 网关对外地址（随 Agent 凭证下发），默认 `http://<BIND_ADDR>/mcp`。
+//!
+//! 六边形组装（P1-10）：仓储具体实现（adapter-postgres）在此实例化，
+//! 以 `Arc<dyn Trait + Send + Sync>` 注入用例服务（application），再注入
+//! 两个驱动适配器——驱动适配器不接触任何仓储实现。
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
+use adapter_postgres::{
+    Argon2PasswordHasher, PgAnnotationRepository, PgEventStore, PgItemRepository,
+    PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository, PgTokenRepository,
+    PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository, RandomCredentialIssuer,
+};
+use application::agent::AgentService;
+use application::auth::AuthService;
+use application::paper::PaperService;
+use application::quiz::QuizService;
+use application::space::SpaceService;
+use application::wrong::WrongService;
 use axum::Router;
+use domain::ports::{
+    AnnotationRepository, CredentialIssuer, EventStore, ItemRepository, PaperRepository,
+    PasswordHasher, QuestionRepository, QuizRecordRepository, TokenRepository, UserRepository,
+    WorkspaceRepository, WrongItemRepository,
+};
 use sqlx::postgres::PgPoolOptions;
 use tracing::info;
 
@@ -34,8 +55,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("../../migrations").run(&pool).await?;
     info!(%bind, %mcp_endpoint, "服务启动完成");
 
-    let http_state = adapter_http::AppState::new(pool.clone(), mcp_endpoint);
-    let mcp_state = adapter_mcp::McpState::new(pool);
+    // ---- 组装：仓储（adapter-postgres）→ 用例服务（application）→ 注入驱动适配器 ----
+    let users: Arc<dyn UserRepository + Send + Sync> =
+        Arc::new(PgUserRepository::new(pool.clone()));
+    let tokens: Arc<dyn TokenRepository + Send + Sync> =
+        Arc::new(PgTokenRepository::new(pool.clone()));
+    let hasher: Arc<dyn PasswordHasher + Send + Sync> = Arc::new(Argon2PasswordHasher);
+    let issuer: Arc<dyn CredentialIssuer + Send + Sync> = Arc::new(RandomCredentialIssuer);
+    let workspaces: Arc<dyn WorkspaceRepository + Send + Sync> =
+        Arc::new(PgWorkspaceRepository::new(pool.clone()));
+    let items: Arc<dyn ItemRepository + Send + Sync> =
+        Arc::new(PgItemRepository::new(pool.clone()));
+    let annotations: Arc<dyn AnnotationRepository + Send + Sync> =
+        Arc::new(PgAnnotationRepository::new(pool.clone()));
+    let questions: Arc<dyn QuestionRepository + Send + Sync> =
+        Arc::new(PgQuestionRepository::new(pool.clone()));
+    let quiz_records: Arc<dyn QuizRecordRepository + Send + Sync> =
+        Arc::new(PgQuizRecordRepository::new(pool.clone()));
+    let wrong_items: Arc<dyn WrongItemRepository + Send + Sync> =
+        Arc::new(PgWrongItemRepository::new(pool.clone()));
+    let papers: Arc<dyn PaperRepository + Send + Sync> =
+        Arc::new(PgPaperRepository::new(pool.clone()));
+    let events: Arc<dyn EventStore + Send + Sync> = Arc::new(PgEventStore::new(pool));
+
+    let auth = Arc::new(AuthService::new(users, tokens, hasher, issuer));
+    let space = Arc::new(SpaceService::new(
+        workspaces.clone(),
+        items.clone(),
+        annotations,
+        events.clone(),
+    ));
+    let quiz = Arc::new(QuizService::new(
+        workspaces.clone(),
+        items.clone(),
+        questions.clone(),
+        quiz_records,
+        wrong_items.clone(),
+        events.clone(),
+    ));
+    let wrong = Arc::new(WrongService::new(wrong_items.clone(), questions.clone()));
+    let paper = Arc::new(PaperService::new(
+        workspaces.clone(),
+        items.clone(),
+        questions.clone(),
+        papers,
+        wrong_items,
+        events.clone(),
+    ));
+    let agent = Arc::new(AgentService::new(workspaces, items, questions, events));
+
+    let http_state = adapter_http::AppState::new(
+        auth.clone(),
+        space.clone(),
+        quiz,
+        wrong,
+        paper,
+        agent.clone(),
+        mcp_endpoint,
+    );
+    let mcp_state = adapter_mcp::McpState::new(auth, space, agent);
     let app: Router = adapter_http::router(http_state).merge(adapter_mcp::router(mcp_state));
 
     let listener = tokio::net::TcpListener::bind(bind).await?;

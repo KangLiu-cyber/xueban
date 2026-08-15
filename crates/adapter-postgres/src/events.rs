@@ -1,5 +1,6 @@
 //! 事件存储输出端口实现：events 表（追加写，只增不改）。
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use domain::error::{Error, Result};
 use domain::event::{Event, EventAction};
@@ -20,6 +21,7 @@ impl PgEventStore {
     }
 }
 
+#[async_trait]
 impl EventStore for PgEventStore {
     async fn append(&self, event: &Event) -> Result<i64> {
         let row = sqlx::query(

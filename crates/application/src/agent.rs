@@ -63,10 +63,10 @@ const TOOLS: [&str; 10] = [
 
 pub struct AgentService<W, I, Q, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    Q: QuestionRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     workspaces: Arc<W>,
     items: Arc<I>,
@@ -76,10 +76,10 @@ where
 
 impl<W, I, Q, E> AgentService<W, I, Q, E>
 where
-    W: WorkspaceRepository,
-    I: ItemRepository,
-    Q: QuestionRepository,
-    E: EventStore,
+    W: WorkspaceRepository + ?Sized,
+    I: ItemRepository + ?Sized,
+    Q: QuestionRepository + ?Sized,
+    E: EventStore + ?Sized,
 {
     pub fn new(workspaces: Arc<W>, items: Arc<I>, questions: Arc<Q>, events: Arc<E>) -> Self {
         Self {

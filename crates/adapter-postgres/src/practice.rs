@@ -4,6 +4,7 @@
 //! 互转（serde）；读路径在 SQL 层强制 user_id 归属（questions/papers join
 //! workspaces），作为隔离第二道防线。
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use domain::error::{Error, Result};
 use domain::ports::{
@@ -25,6 +26,7 @@ impl PgQuestionRepository {
     }
 }
 
+#[async_trait]
 impl QuestionRepository for PgQuestionRepository {
     async fn insert_many(&self, questions: &[Question]) -> Result<Vec<i64>> {
         if questions.is_empty() {
@@ -162,6 +164,7 @@ impl PgQuizRecordRepository {
     }
 }
 
+#[async_trait]
 impl QuizRecordRepository for PgQuizRecordRepository {
     async fn append(&self, record: &QuizRecord) -> Result<i64> {
         let chosen: Option<serde_json::Value> = record
@@ -197,6 +200,7 @@ impl PgWrongItemRepository {
     }
 }
 
+#[async_trait]
 impl WrongItemRepository for PgWrongItemRepository {
     async fn find(&self, user_id: i64, question_id: i64) -> Result<Option<WrongItem>> {
         sqlx::query(
@@ -331,6 +335,7 @@ impl PgPaperRepository {
     }
 }
 
+#[async_trait]
 impl PaperRepository for PgPaperRepository {
     async fn insert(&self, paper: &Paper) -> Result<i64> {
         let config = serde_json::to_value(&paper.config)
