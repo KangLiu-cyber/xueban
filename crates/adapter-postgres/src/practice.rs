@@ -251,9 +251,11 @@ impl WrongItemRepository for PgWrongItemRepository {
         question_id: i64,
         now: DateTime<Utc>,
     ) -> Result<bool> {
+        // mastered = false 条件使重复标记幂等（返回 false）：Postgres 的
+        // rows_affected 是匹配行数而非变更行数，无条件会恒返回 true。
         let result = sqlx::query(
             "update wrong_items set mastered = true, updated_at = $3
-             where user_id = $1 and question_id = $2",
+             where user_id = $1 and question_id = $2 and mastered = false",
         )
         .bind(user_id)
         .bind(question_id)
@@ -272,7 +274,7 @@ impl WrongItemRepository for PgWrongItemRepository {
     ) -> Result<bool> {
         let result = sqlx::query(
             "update wrong_items set mastered = false, updated_at = $3
-             where user_id = $1 and question_id = $2",
+             where user_id = $1 and question_id = $2 and mastered = true",
         )
         .bind(user_id)
         .bind(question_id)

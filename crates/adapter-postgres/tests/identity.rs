@@ -15,18 +15,18 @@ async fn user_insert_and_find_round_trip() {
     };
     setup(&pool).await;
     let repo = PgUserRepository::new(pool);
-    let account = format!("alice_{}", stamp());
     let id = insert_user(&repo, "alice").await;
-    let by_account = repo
-        .find_by_account(&account)
-        .await
-        .expect("按账号查询失败")
-        .expect("应按账号找到");
     let by_id = repo
         .find_by_id(id)
         .await
         .expect("按 id 查询失败")
         .expect("应按 id 找到");
+    let account = by_id.account.clone();
+    let by_account = repo
+        .find_by_account(&account)
+        .await
+        .expect("按账号查询失败")
+        .expect("应按账号找到");
     assert_eq!(by_account.id, id);
     assert_eq!(by_account.account, account);
     assert_eq!(by_account.nickname.as_deref(), Some("alice-昵称"));

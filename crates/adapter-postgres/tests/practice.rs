@@ -3,20 +3,20 @@
 mod common;
 
 use adapter_postgres::{
-    PgEventStore, PgPaperRepository, PgQuestionRepository, PgQuizRecordRepository,
-    PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository,
+    PgEventStore, PgItemRepository, PgPaperRepository, PgQuestionRepository,
+    PgQuizRecordRepository, PgUserRepository, PgWorkspaceRepository, PgWrongItemRepository,
 };
 use chrono::Utc;
 use common::{insert_user, pool, setup, stamp};
 use domain::event::{Event, EventAction};
 use domain::ports::{
-    EventStore, PaperRepository, QuestionRepository, QuizRecordRepository, WorkspaceRepository,
-    WrongItemRepository,
+    EventStore, ItemRepository, PaperRepository, QuestionRepository, QuizRecordRepository,
+    WorkspaceRepository, WrongItemRepository,
 };
 use domain::practice::{
     Answer, Chosen, Paper, PaperConfig, PaperResult, Question, QuestionType, QuizRecord,
 };
-use domain::space::Workspace;
+use domain::space::{Creator, Item, ItemKind, Workspace};
 use std::collections::BTreeSet;
 
 fn new_workspace(user_id: i64) -> Workspace {
@@ -66,13 +66,39 @@ async fn question_insert_many_find_and_draw() {
         .insert(&new_workspace(other))
         .await
         .expect("插入空间失败");
-    let repo = PgQuestionRepository::new(pool);
+    let repo = PgQuestionRepository::new(pool.clone());
+
+    // questions.source_item_id 外键指向真实 items，先种两个"集"。
+    let item_repo = PgItemRepository::new(pool);
+    let item = |ws: i64, name: &str| Item {
+        id: 0,
+        workspace_id: ws,
+        parent_id: None,
+        kind: ItemKind::Note,
+        name: format!("{name}_{}", stamp()),
+        content: Some("内容".into()),
+        created_by: Creator::Agent,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+    let mine_a = item_repo
+        .insert(&item(ws_id, "第1集"))
+        .await
+        .expect("插入笔记失败");
+    let mine_b = item_repo
+        .insert(&item(ws_id, "第2集"))
+        .await
+        .expect("插入笔记失败");
+    let other_item = item_repo
+        .insert(&item(other_ws, "第3集"))
+        .await
+        .expect("插入笔记失败");
 
     let questions = vec![
-        question(ws_id, 11, QuestionType::Single),
-        question(ws_id, 11, QuestionType::Multi),
-        question(ws_id, 22, QuestionType::Judge),
-        question(other_ws, 33, QuestionType::Single),
+        question(ws_id, mine_a, QuestionType::Single),
+        question(ws_id, mine_a, QuestionType::Multi),
+        question(ws_id, mine_b, QuestionType::Judge),
+        question(other_ws, other_item, QuestionType::Single),
     ];
     let ids = repo.insert_many(&questions).await.expect("批量插入失败");
     assert_eq!(ids.len(), 4);
@@ -100,7 +126,7 @@ async fn question_insert_many_find_and_draw() {
 
     // 按来源与题型过滤。
     let by_source = repo
-        .draw(ws_id, user_id, &[11], &[], 10)
+        .draw(ws_id, user_id, &[mine_a], &[], 10)
         .await
         .expect("抽题失败");
     assert_eq!(by_source.len(), 2);
@@ -111,7 +137,7 @@ async fn question_insert_many_find_and_draw() {
     assert_eq!(by_type.len(), 1);
     assert_eq!(by_type[0].qtype, QuestionType::Judge);
     let both = repo
-        .draw(ws_id, user_id, &[11], &[QuestionType::Single], 10)
+        .draw(ws_id, user_id, &[mine_a], &[QuestionType::Single], 10)
         .await
         .expect("抽题失败");
     assert_eq!(both.len(), 1);
