@@ -90,10 +90,10 @@ jobs:
         run: cargo install trunk --locked
       - name: 安装 tauri CLI（crate 名 tauri-cli，安装的 binary 是 cargo-tauri）
         run: cargo install tauri-cli --locked
-      - name: 编译桌面端安装包（tauri 自动先 trunk build 前端，端点指向生产域名）
+      - name: 编译桌面端安装包（tauri 自动先 trunk build 前端，tauri build 默认即 release，端点指向生产域名）
         run: |
           rustup target add wasm32-unknown-unknown
-          cd clients/desktop && XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build --release
+          cd clients/desktop && XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build
       - name: 上传安装包
         uses: actions/upload-artifact@v4
         with:
