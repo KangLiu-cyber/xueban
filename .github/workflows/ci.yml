@@ -98,17 +98,13 @@ jobs:
       - name: 重命名安装包为 ASCII 文件名（GitHub 对非 ASCII 文件名会剥掉前缀，统一 xueban_ 前缀）
         run: |
           cd clients/target/release/bundle
-          for f in deb/*.deb appimage/*.AppImage; do
-            [ -e "$f" ] && mv "$f" "$(dirname "$f")/xueban_$(basename "$f" | sed 's/^学伴_//')"
-          done
+          [ -e deb/*.deb ] && mv deb/*.deb "deb/xueban_$(basename deb/*.deb | sed 's/^学伴_//')"
       - name: 上传安装包（clients/ 是独立 workspace，cargo 产物在 clients/target 下）
         uses: actions/upload-artifact@v4
         with:
           name: xueban-desktop
           if-no-files-found: error
-          path: |
-            clients/target/release/bundle/deb/*.deb
-            clients/target/release/bundle/appimage/*.AppImage
+          path: clients/target/release/bundle/deb/*.deb
 
   release:
     name: 发布 GitHub Release
@@ -130,7 +126,7 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           # 不用 glob（避免 shell 匹配不到时失败），find 收集全部交付物后显式传给 gh
-          mapfile -t files < <(find dist -type f \( -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' -o -name '*.AppImage' \))
+          mapfile -t files < <(find dist -type f \( -name '*.tar.gz' -o -name '*.apk' -o -name '*.deb' \))
           if [ "${#files[@]}" -lt 3 ]; then
             echo "交付物不齐（共 ${#files[@]} 个）：${files[*]}"
             exit 1
