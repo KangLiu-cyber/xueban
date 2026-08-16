@@ -95,6 +95,12 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           cd clients/desktop && XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build
+      - name: 重命名安装包为 ASCII 文件名（GitHub 对非 ASCII 文件名会剥掉前缀，统一 xueban_ 前缀）
+        run: |
+          cd clients/target/release/bundle
+          for f in deb/*.deb appimage/*.AppImage; do
+            [ -e "$f" ] && mv "$f" "$(dirname "$f")/xueban_$(basename "$f" | sed 's/^学伴_//')"
+          done
       - name: 上传安装包（clients/ 是独立 workspace，cargo 产物在 clients/target 下）
         uses: actions/upload-artifact@v4
         with:
