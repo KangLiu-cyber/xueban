@@ -162,7 +162,7 @@ Agent 读取事件 → 复盘诊断 → 生成补充内容写回系统
 | items | id, workspace_id, parent_id（可自由嵌套）, kind, name, content, source（ai/user） |
 | annotations | id, item_id, user_id, anchor, text, source（ai/user） |
 | attachments | id, item_id, filename, mime, size_bytes, uuid, created_at |
-| events | id, user_id, item_id, action（annotate/answer/reveal/wrong）, payload, created_at |
+| events | id, user_id, item_id, action（annotate/answer/wrong/agent_write/checkin）, payload, created_at |
 
 - kind：note（笔记）/ quiz（习题），可扩展新类型。
 - items 删除级联：删除目录/笔记时，其子树、批注、归属习题与附件一并删除（`DELETE /api/v1/items/:id`）。附件二进制存宿主磁盘（`ATTACHMENTS_DIR/{user_id}/{uuid}`），表行随 item 级联删除，磁盘文件由服务端先收集子树附件再删除；崩溃窗口可能留下无表行引用的孤儿文件，无害且不占数据库空间。
@@ -249,6 +249,44 @@ get_events（出参 `{events: [...]}`）/ report_status / get_skill / upload_att
 - 布局分支用 WindowSizeClass（Compact 单栏 / Medium 及以上双栏）。
 - 本地缓存 Room，登录态与 token 存 EncryptedSharedPreferences；MCP 交互走后端，不在端上直连。
 
-## 十三、下一步
+## 十三、体育教育领域包（最小闭环）
 
-需求定稿 → P0 开发（优先：注册 / 登录 / 用户 token / MCP 接入与能力下发）→ 桌面端 UI 实现 → 安卓端 UI 实现（按 v1 原型）→ 闭环联调。
+体育教育作为**领域包**（内容类型 + Skill 集 + 前端领域页面）挂载到学伴系统上：平台机制（账号、内容树、笔记批注、附件、习题、错题本、事件流、复盘链路）全部复用，不重复建设；Agent 架构流程不变，换领域 = 换一套 Skill。
+
+### 13.1 范围
+
+**做**（最小闭环）：羽毛球（高远球、步法等 2~3 个主题）+ 核心训练（平板支撑、卷腹、臀桥等 3 个主题）——
+
+- 教学视频 → AI 生成动作要领笔记（技术阶段拆解、常见错误与纠正、教练强调批注；配图/关键动作动图走附件）；
+- 每主题要领检验题 5~10 道（带答案与解析），刷题判分、答错自动归集错题本（复用备考版刷题/错题链路）；
+- **训练打卡**（本期唯一新增平台能力）：每次训练记一笔——练了什么、练了多久、自评几分，事件入库供 AI 复盘读取；
+- AI 复盘：Agent 读取训练打卡与检验错题事件 → 诊断薄弱环节 → 写回纠正讲解笔记 + 个性化训练建议 + 针对性新题。
+
+**暂不做**：视频附件 mp4/webm 与长视频在线播放（先图片/gif/webp，长视频阶段二）、组卷模考（复用备考版）、训练录像动作分析、可穿戴设备接入、教练端、训练计划管理。
+
+### 13.2 训练打卡事件（新增）
+
+- events 表 action 新增 `checkin`（text 列，无需迁移）；
+- payload：`{"sport": "badminton"|"core", "activity": "正手高远球", "duration_minutes": 60, "rating": 4, "note": "可选"}`，其中 rating 为 1~5 自评；
+- 复盘 Agent 经 MCP `read_events` 按 action=checkin / wrong 过滤读取，无 MCP 协议改动。
+
+### 13.3 新增 REST 端点
+
+| 方法 | 端点 | 说明 |
+|:---|:---|:---|
+| POST | `/api/v1/training/checkin` | 提交训练打卡，入参 `{sport, activity, duration_minutes, rating, note?}`（workspace_id 可选），出参打卡记录 |
+| GET | `/api/v1/training/checkins?limit=20` | 训练打卡历史（按时间倒序，仅当前用户） |
+
+### 13.4 前端
+
+- 新增「训练打卡」页（侧边栏导航）：打卡表单（运动、训练内容、时长、自评 1~5、备注）+ 历史列表；
+- 无专门原型，视觉沿用 v3 柔和版（暖米底 + 淡紫主色 + 圆角卡片），与现有页面一致；
+- 安卓端训练打卡页后续版本跟进（本期只做 web/desktop 端）。
+
+### 13.5 内容资产
+
+- `skills/sports-training/`：体育 Skill 包（SKILL.md 含「教学视频 → 动作要领笔记 + 检验题」与「复盘诊断」两套流程脚本；`references/` 下羽毛球、核心训练两运动内容种子，供 Agent 生成时参照）。
+
+## 十四、下一步
+
+需求定稿 → P0 开发（优先：注册 / 登录 / 用户 token / MCP 接入与能力下发）→ 桌面端 UI 实现 → 安卓端 UI 实现（按 v1 原型）→ 闭环联调。体育最小闭环在既有闭环之上叠加（见第十三节），平台能力随体育领域包同步演进。

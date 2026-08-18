@@ -165,6 +165,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── quiz.rs          # DrawQuestions / SubmitAnswer
 │   │       ├── wrong.rs         # ListWrong / RedoWrong / MarkMastered
 │   │       ├── paper.rs         # AssemblePaper / SubmitPaper
+│   │       ├── training.rs      # CheckinTraining / ListCheckins（训练打卡，体育领域包）
 │   │       └── agent.rs         # AgentBootstrap / ReadEvents / ReportStatus / GetSkill / CreateSkill / ListSkills / DeleteSkill
 │   ├── adapter-http/            # 驱动适配器：Axum REST API（/api/v1）
 │   │   └── src/
@@ -174,7 +175,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │       ├── middleware.rs    # require_auth + 限流
 │   │       ├── attachments.rs   # 附件端点（上传 / 读取 / 删除）
 │   │       ├── skill.rs         # 自定义 Skill 端点（清单 / 新建 / 删除）
-│   │       └── ...              # space / quiz / wrong / paper 等端点
+│   │       └── ...              # space / quiz / wrong / paper / training 等端点
 │   ├── adapter-mcp/             # 驱动适配器：MCP 网关 + 能力下发
 │   ├── adapter-postgres/        # 被驱动适配器：SQLx 仓储与事件存储实现
 │   │   └── src/
@@ -189,7 +190,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 │   │   └── src/
 │   │       ├── lib.rs           # 应用根组件与路由
 │   │       ├── api.rs           # 后端 /api/v1 客户端封装
-│   │       ├── pages/           # 页面：登录、空间树、刷题、错题本、组卷、复盘
+│   │       ├── views/          # 页面：登录、空间树、刷题、错题本、组卷、训练打卡等
 │   │       └── components/      # 通用组件
 │   ├── desktop/                 # Tauri 壳（bin crate，依赖 web）
 │   │   └── src/main.rs          # tauri::Builder 启动，加载 web 构建产物
@@ -232,7 +233,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 
 ### 6.4 协作事件上下文
 
-- Event 只追加不修改，记录 annotate、answer、wrong、agent_write 等行为，按 user_id 查询。
+- Event 只追加不修改，记录 annotate、answer、wrong、agent_write、checkin 等行为，按 user_id 查询。checkin 为训练打卡事件（体育领域包），payload 存 `{sport, activity, duration_minutes, rating, note?}`，供复盘 Agent 经 ReadEvents 读取。
 - 复盘闭环的数据基础：Agent 通过 ReadEvents 拿到最近的错题与答题行为，生成复盘内容写回学习空间。
 
 ## 七、数据模型
@@ -352,7 +353,7 @@ events (
   user_id      bigint not null references users,
   workspace_id bigint,
   item_id      bigint,
-  action       text not null,              -- annotate/answer/wrong/agent_write...
+  action       text not null,              -- annotate/answer/wrong/agent_write/checkin...
   payload      jsonb,
   created_at   timestamptz default now()
 )
@@ -389,6 +390,8 @@ events (
 | 错题 | `GET /api/v1/wrong/stats` | WrongStats（累计/近 7 天新增/已掌握，错题本统计卡片） |
 | 错题 | `POST /api/v1/wrong/:id/master` | MarkMastered |
 | 错题 | `POST /api/v1/wrong/:id/unmaster` | MarkMastered（取消掌握） |
+| 训练 | `POST /api/v1/training/checkin` | CheckinTraining（训练打卡，入参 `{sport, activity, duration_minutes, rating, note?}`，workspace_id 可选；落 checkin 事件） |
+| 训练 | `GET /api/v1/training/checkins?limit=` | ListCheckins（打卡历史，按时间倒序，仅当前用户） |
 | 组卷 | `POST /api/v1/papers` | AssemblePaper |
 | 组卷 | `GET /api/v1/papers/:id` | ReadPaper |
 | 组卷 | `POST /api/v1/papers/:id/submit` | SubmitPaper |
