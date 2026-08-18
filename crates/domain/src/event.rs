@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// 行为类型：annotate/answer/wrong/agent_write 等。
+/// 行为类型：annotate/answer/wrong/agent_write/checkin 等。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventAction {
@@ -11,6 +11,7 @@ pub enum EventAction {
     Answer,
     Wrong,
     AgentWrite,
+    Checkin,
 }
 
 impl EventAction {
@@ -20,6 +21,7 @@ impl EventAction {
             EventAction::Answer => "answer",
             EventAction::Wrong => "wrong",
             EventAction::AgentWrite => "agent_write",
+            EventAction::Checkin => "checkin",
         }
     }
 }
@@ -46,5 +48,6 @@ mod tests {
         assert_eq!(EventAction::Answer.as_str(), "answer");
         assert_eq!(EventAction::Wrong.as_str(), "wrong");
         assert_eq!(EventAction::AgentWrite.as_str(), "agent_write");
+        assert_eq!(EventAction::Checkin.as_str(), "checkin");
     }
 }

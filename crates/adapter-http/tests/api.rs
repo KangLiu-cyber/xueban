@@ -19,6 +19,7 @@ use application::auth::AuthService;
 use application::paper::PaperService;
 use application::quiz::QuizService;
 use application::space::SpaceService;
+use application::training::TrainingService;
 use application::wrong::WrongService;
 use axum::Router;
 use axum::body::Body;
@@ -100,10 +101,11 @@ async fn app_with_dir() -> Option<(Router, PathBuf)> {
         workspaces,
         items.clone(),
         questions,
-        events,
+        events.clone(),
         skills_repo,
         Vec::new(),
     ));
+    let training = Arc::new(TrainingService::new(events));
     let attachments = Arc::new(AttachmentService::new(items, attachment_repo, storage));
     Some((
         router(AppState::new(
@@ -114,6 +116,7 @@ async fn app_with_dir() -> Option<(Router, PathBuf)> {
             paper,
             agent,
             attachments,
+            training,
             "https://mcp.example.com/mcp".into(),
         )),
         dir,

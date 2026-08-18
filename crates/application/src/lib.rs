@@ -9,6 +9,7 @@ pub mod auth;
 pub mod paper;
 pub mod quiz;
 pub mod space;
+pub mod training;
 pub mod wrong;
 
 #[cfg(test)]

@@ -30,6 +30,7 @@ use application::auth::AuthService;
 use application::paper::PaperService;
 use application::quiz::QuizService;
 use application::space::SpaceService;
+use application::training::TrainingService;
 use application::wrong::WrongService;
 use axum::Router;
 use axum::http::{Request, StatusCode};
@@ -181,6 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wrong_items,
         events.clone(),
     ));
+    let training = Arc::new(TrainingService::new(events.clone()));
     let agent = Arc::new(AgentService::new(
         workspaces,
         items,
@@ -198,6 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         paper,
         agent.clone(),
         attachments.clone(),
+        training,
         mcp_endpoint,
     );
     let mcp_state = adapter_mcp::McpState::new(auth, space, agent, attachments);

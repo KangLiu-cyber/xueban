@@ -22,6 +22,7 @@ pub mod paper;
 pub mod quiz;
 pub mod skill;
 pub mod space;
+pub mod training;
 pub mod wrong;
 
 use std::sync::Arc;
@@ -32,6 +33,7 @@ use application::auth::AuthService;
 use application::paper::PaperService;
 use application::quiz::QuizService;
 use application::space::SpaceService;
+use application::training::TrainingService;
 use application::wrong::WrongService;
 use axum::Router;
 use axum::middleware as axum_mw;
@@ -94,6 +96,8 @@ pub type PgAttachmentService = AttachmentService<
     dyn AttachmentStorage + Send + Sync,
 >;
 
+pub type PgTrainingService = TrainingService<dyn EventStore + Send + Sync>;
+
 /// 附件上传路由的请求体上限：10MB 业务上限 + 2MB 余量（仅挂在上传子路由）。
 const UPLOAD_BODY_LIMIT: usize = 12 * 1024 * 1024;
 
@@ -107,6 +111,7 @@ pub struct AppState {
     pub paper: Arc<PgPaperService>,
     pub agent: Arc<PgAgentService>,
     pub attachments: Arc<PgAttachmentService>,
+    pub training: Arc<PgTrainingService>,
     pub mcp_endpoint: String,
     pub limiter: Arc<RateLimiter>,
 }
@@ -124,6 +129,7 @@ impl AppState {
         paper: Arc<PgPaperService>,
         agent: Arc<PgAgentService>,
         attachments: Arc<PgAttachmentService>,
+        training: Arc<PgTrainingService>,
         mcp_endpoint: String,
     ) -> Self {
         Self {
@@ -134,6 +140,7 @@ impl AppState {
             paper,
             agent,
             attachments,
+            training,
             mcp_endpoint,
             limiter: Arc::new(RateLimiter::default()),
         }
@@ -190,6 +197,8 @@ pub fn router(state: AppState) -> Router {
         .route("/wrong/stats", get(wrong::stats))
         .route("/wrong/{id}/master", post(wrong::mark_mastered))
         .route("/wrong/{id}/unmaster", post(wrong::unmark_mastered))
+        .route("/training/checkin", post(training::checkin))
+        .route("/training/checkins", get(training::checkins))
         .route("/papers", post(paper::assemble))
         .route("/papers/{id}", get(paper::read))
         .route("/papers/{id}/submit", post(paper::submit))

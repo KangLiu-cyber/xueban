@@ -531,6 +531,7 @@ pub enum EventActionDto {
     Answer,
     Wrong,
     AgentWrite,
+    Checkin,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -713,6 +714,7 @@ impl From<EventAction> for EventActionDto {
             EventAction::Answer => EventActionDto::Answer,
             EventAction::Wrong => EventActionDto::Wrong,
             EventAction::AgentWrite => EventActionDto::AgentWrite,
+            EventAction::Checkin => EventActionDto::Checkin,
         }
     }
 }
