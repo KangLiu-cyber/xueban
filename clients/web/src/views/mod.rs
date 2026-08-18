@@ -5,5 +5,6 @@ pub mod modals;
 pub mod notes;
 pub mod quiz;
 pub mod shell;
+pub mod training;
 pub mod ui;
 pub mod wrong;

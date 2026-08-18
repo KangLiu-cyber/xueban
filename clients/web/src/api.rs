@@ -504,6 +504,42 @@ pub async fn mark_mastered(wrong_item_id: i64) -> ApiResult<()> {
     .map(|_| ())
 }
 
+// ---- 训练打卡（体育领域包） ----
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckinInput {
+    pub sport: String,
+    pub activity: String,
+    pub duration_minutes: u32,
+    pub rating: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CheckinRecord {
+    pub id: i64,
+    pub workspace_id: Option<i64>,
+    pub sport: String,
+    pub activity: String,
+    pub duration_minutes: u32,
+    pub rating: u8,
+    pub note: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn checkin(input: &CheckinInput) -> ApiResult<CheckinRecord> {
+    post_json(
+        "/training/checkin",
+        &serde_json::to_string(input).unwrap_or_default(),
+    )
+    .await
+}
+
+pub async fn training_checkins(limit: u32) -> ApiResult<Vec<CheckinRecord>> {
+    get_json(&format!("/training/checkins?limit={}", limit)).await
+}
+
 // ---- 组卷 ----
 
 pub async fn assemble_paper(req: &AssembleRequest) -> ApiResult<PaperBundle> {

@@ -11,6 +11,7 @@ use leptos::task::spawn_local;
 
 use crate::api::{self, DrawQuery, ItemKind, ItemNode};
 use crate::state::{self, episode_map, AppState, ConfirmSpec, View};
+use crate::views::training::refresh_checkins;
 use crate::views::ui::{close_all_dd, fire_view_switch_hooks};
 use crate::views::wrong::refresh_wrong;
 
@@ -94,6 +95,7 @@ pub(crate) async fn init_data(state: AppState) {
         Err(e) => state.toast(&format!("题库加载失败：{}", e)),
     }
     refresh_wrong(state).await;
+    refresh_checkins(state).await;
 }
 
 fn topbar_title(state: AppState) -> (String, String) {
@@ -105,6 +107,7 @@ fn topbar_title(state: AppState) -> (String, String) {
         View::Wrong => ("错题本".into(), "反复重做直到掌握".into()),
         View::Assembly => ("组卷".into(), "挑选题目，一键组卷模考".into()),
         View::Mock => ("模考".into(), "限时答题，自动判分".into()),
+        View::Training => ("训练打卡".into(), "记录训练，AI 复盘改进".into()),
         View::Notes => match state.episode.get() {
             Some((c, e)) => {
                 let courses = state.courses.get();
@@ -313,6 +316,11 @@ fn Sidebar(state: AppState, user_menu: RwSignal<bool>) -> impl IntoView {
                     <span class="icon">"📜"</span>
                     " 组卷"
                 </div>
+                <div class="nav-item" class:active=move || state.view.get() == View::Training
+                    on:click=move |_| switch_view(state, View::Training)>
+                    <span class="icon">"🏸"</span>
+                    " 训练打卡"
+                </div>
             </div>
             <div class="nav-section">
                 <div class="nav-section-title">"内容 · AI 生成（点目录可折叠）"</div>
@@ -449,6 +457,9 @@ pub fn Shell() -> impl IntoView {
                         </div>
                         <div class="view" id="view-mock" class:active=move || state.view.get() == View::Mock>
                             <crate::views::mock::MockView state=state />
+                        </div>
+                        <div class="view" id="view-training" class:active=move || state.view.get() == View::Training>
+                            <crate::views::training::TrainingView state=state />
                         </div>
                     </div>
                 </div>

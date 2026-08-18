@@ -10,8 +10,8 @@ use gloo_storage::Storage as _;
 use leptos::prelude::*;
 
 use crate::api::{
-    AnswerOutcome, Chosen, Item, ItemBundle, ItemKind, ItemNode, QuestionBrief, UserDto, Workspace,
-    WrongListItem, WrongStats,
+    AnswerOutcome, CheckinRecord, Chosen, Item, ItemBundle, ItemKind, ItemNode, QuestionBrief,
+    UserDto, Workspace, WrongListItem, WrongStats,
 };
 
 pub const LS_TOKEN: &str = "xb_token";
@@ -42,6 +42,7 @@ pub enum View {
     Assembly,
     Notes,
     Mock,
+    Training,
 }
 
 #[derive(Clone, Debug)]
@@ -255,6 +256,7 @@ pub struct AppState {
     pub wrong_stats: RwSignal<Option<WrongStats>>,
     pub wrong_filter: RwSignal<WrongFilter>,
     pub wrong_badge: RwSignal<u32>,
+    pub checkins: RwSignal<Vec<CheckinRecord>>,
     pub redo_list: RwSignal<Vec<WrongListItem>>,
     pub redo_idx: RwSignal<usize>,
     pub redo_state: RwSignal<Vec<RedoState>>,
@@ -351,6 +353,7 @@ impl AppState {
             wrong_stats: RwSignal::new(None),
             wrong_filter: RwSignal::new(WrongFilter::All),
             wrong_badge: RwSignal::new(0),
+            checkins: RwSignal::new(Vec::new()),
             redo_list: RwSignal::new(Vec::new()),
             redo_idx: RwSignal::new(0),
             redo_state: RwSignal::new(Vec::new()),
