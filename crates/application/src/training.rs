@@ -239,4 +239,74 @@ mod tests {
         assert_eq!(s.list(2, 10).await.unwrap().len(), 1);
         assert!(s.list(3, 10).await.unwrap().is_empty());
     }
+
+    /// 事件流中的坏 checkin 事件（坏 JSON / 缺 payload / 缺字段）必须被跳过，
+    /// 不能打挂列表——历史事件是只读数据，旧版本写入的坏数据不能影响新版本。
+    #[tokio::test]
+    async fn list_skips_malformed_checkin_events() {
+        let s = svc().await;
+        s.checkin(1, None, input()).await.unwrap();
+        let bad_payload = Event {
+            id: 0,
+            user_id: 1,
+            workspace_id: None,
+            item_id: None,
+            action: EventAction::Checkin,
+            payload: Some("{ not json".into()),
+            created_at: Utc::now(),
+        };
+        let no_payload = Event {
+            id: 0,
+            user_id: 1,
+            workspace_id: None,
+            item_id: None,
+            action: EventAction::Checkin,
+            payload: None,
+            created_at: Utc::now(),
+        };
+        let missing_fields = Event {
+            id: 0,
+            user_id: 1,
+            workspace_id: None,
+            item_id: None,
+            action: EventAction::Checkin,
+            payload: Some("{\"sport\":\"badminton\"}".into()),
+            created_at: Utc::now(),
+        };
+        for e in [bad_payload, no_payload, missing_fields] {
+            s.events.append(&e).await.unwrap();
+        }
+        let list = s.list(1, 10).await.unwrap();
+        assert_eq!(list.len(), 1, "坏事件应被跳过，只留正常打卡");
+        assert_eq!(list[0].activity, "正手高远球");
+    }
+
+    /// 无备注打卡：payload 的 note 为 null，列表读出为 None。
+    #[tokio::test]
+    async fn checkin_without_note_roundtrips_null() {
+        let s = svc().await;
+        let mut no_note = input();
+        no_note.note = None;
+        s.checkin(1, None, no_note).await.unwrap();
+        let events = s.events.list_by_user(1, 10).await.unwrap();
+        let payload: serde_json::Value =
+            serde_json::from_str(events[0].payload.as_ref().unwrap()).unwrap();
+        assert!(payload["note"].is_null());
+        let list = s.list(1, 10).await.unwrap();
+        assert_eq!(list[0].note, None);
+    }
+
+    /// 并发打卡：两条都落库、都进列表（事件不丢）。
+    #[tokio::test]
+    async fn concurrent_checkins_both_persist() {
+        let events = Arc::new(InMemoryEventStore::default());
+        let s1 = TrainingService::new(events.clone());
+        let s2 = TrainingService::new(events);
+        let (a, b) = tokio::join!(s1.checkin(1, None, input()), s2.checkin(1, None, input()));
+        a.unwrap();
+        b.unwrap();
+        let list = s1.list(1, 10).await.unwrap();
+        assert_eq!(list.len(), 2);
+        assert_ne!(list[0].id, list[1].id, "两条打卡 id 不应重复");
+    }
 }

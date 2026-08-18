@@ -25,6 +25,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, Request, StatusCode};
 use chrono::Utc;
+use domain::event::EventAction;
 use domain::ports::{
     AnnotationRepository, AttachmentRepository, AttachmentStorage, CredentialIssuer, EventStore,
     ItemRepository, PaperRepository, PasswordHasher, QuestionRepository, QuizRecordRepository,
@@ -1060,4 +1061,164 @@ async fn attachment_cascade_delete_with_item_tree() {
     assert_eq!(disk_files(&dir), 0, "级联删除后磁盘应清空");
 
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[tokio::test]
+async fn training_checkin_and_list_flow() {
+    let Some(app) = app().await else {
+        return;
+    };
+    let pool = common::pool().await.expect("连接池丢失");
+    let (token, body) = register(&app, "sport").await;
+    let user_id = body["user"]["id"].as_i64().expect("无用户 id");
+
+    // 正常打卡（带备注）→ 记录字段齐全。
+    let (status, rec) = send(
+        &app,
+        Method::POST,
+        "/api/v1/training/checkin",
+        Some(&token),
+        Some(json!({
+            "sport": "badminton",
+            "activity": "正手高远球",
+            "duration_minutes": 60,
+            "rating": 4,
+            "note": "手感不错",
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "打卡失败: {rec}");
+    assert_eq!(rec["sport"], json!("badminton"));
+    assert_eq!(rec["activity"], json!("正手高远球"));
+    assert_eq!(rec["duration_minutes"], json!(60));
+    assert_eq!(rec["rating"], json!(4));
+    assert_eq!(rec["note"], json!("手感不错"));
+
+    // 无备注打卡。
+    let (status, _) = send(
+        &app,
+        Method::POST,
+        "/api/v1/training/checkin",
+        Some(&token),
+        Some(json!({
+            "sport": "core",
+            "activity": "平板支撑",
+            "duration_minutes": 30,
+            "rating": 5,
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // 列表：新→旧；limit 生效。
+    let (status, list) = send(
+        &app,
+        Method::GET,
+        "/api/v1/training/checkins?limit=10",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let list = list.as_array().expect("应为数组");
+    assert_eq!(list.len(), 2);
+    assert_eq!(list[0]["sport"], json!("core"), "应按时间倒序");
+    assert_eq!(list[1]["activity"], json!("正手高远球"));
+    let (status, one) = send(
+        &app,
+        Method::GET,
+        "/api/v1/training/checkins?limit=1",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(one.as_array().expect("应为数组").len(), 1);
+
+    // 参数校验 400：非法 rating / 空运动 / 空内容 / 零时长 / limit 越界。
+    for bad in [
+        json!({"sport": "badminton", "activity": "x", "duration_minutes": 1, "rating": 0}),
+        json!({"sport": "badminton", "activity": "x", "duration_minutes": 1, "rating": 6}),
+        json!({"sport": "  ", "activity": "x", "duration_minutes": 1, "rating": 3}),
+        json!({"sport": "badminton", "activity": " ", "duration_minutes": 1, "rating": 3}),
+        json!({"sport": "badminton", "activity": "x", "duration_minutes": 0, "rating": 3}),
+    ] {
+        let (status, body) = send(
+            &app,
+            Method::POST,
+            "/api/v1/training/checkin",
+            Some(&token),
+            Some(bad),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "应 400: {body}");
+    }
+    for limit in [0, 101] {
+        let (status, _) = send(
+            &app,
+            Method::GET,
+            &format!("/api/v1/training/checkins?limit={limit}"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "limit={limit} 应 400");
+    }
+
+    // 用户隔离：他人看不到任何打卡。
+    let (other_token, _) = register(&app, "sport2").await;
+    let (status, list2) = send(
+        &app,
+        Method::GET,
+        "/api/v1/training/checkins?limit=10",
+        Some(&other_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(list2.as_array().expect("应为数组").is_empty());
+
+    // 未鉴权 401。
+    let (status, _) = send(
+        &app,
+        Method::GET,
+        "/api/v1/training/checkins?limit=10",
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = send(
+        &app,
+        Method::POST,
+        "/api/v1/training/checkin",
+        None,
+        Some(json!({"sport": "badminton", "activity": "x", "duration_minutes": 1, "rating": 3})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // 事件流落库：复盘 Agent 走 read_events 应读到两条 checkin 事件。
+    let events = PgEventStore::new(pool.clone())
+        .list_by_user(user_id, 10)
+        .await
+        .expect("读事件失败");
+    let checkins: Vec<_> = events
+        .iter()
+        .filter(|e| e.action == EventAction::Checkin)
+        .collect();
+    assert_eq!(checkins.len(), 2, "应落 2 条 checkin 事件");
+    // 事件流为升序（先 badminton 后 core），与 HTTP 列表的倒序相反。
+    let payload: Value = serde_json::from_str(checkins[0].payload.as_ref().expect("无 payload"))
+        .expect("坏 payload");
+    assert_eq!(payload["sport"], json!("badminton"));
+    assert_eq!(payload["duration_minutes"], json!(60));
+    assert_eq!(payload["rating"], json!(4));
+    let payload: Value = serde_json::from_str(checkins[1].payload.as_ref().expect("无 payload"))
+        .expect("坏 payload");
+    assert_eq!(payload["sport"], json!("core"));
+    assert!(
+        payload["note"].is_null(),
+        "无备注时 payload 的 note 应为 null"
+    );
 }
