@@ -155,6 +155,7 @@ fn qtype_from_str(s: &str) -> Result<QuestionType> {
         "single" => Ok(QuestionType::Single),
         "multi" => Ok(QuestionType::Multi),
         "judge" => Ok(QuestionType::Judge),
+        "video" => Ok(QuestionType::Video),
         other => Err(Error::Storage(format!("未知题型: {other}"))),
     }
 }

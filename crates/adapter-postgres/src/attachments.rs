@@ -79,6 +79,23 @@ impl AttachmentRepository for PgAttachmentRepository {
         rows.iter().map(attachment_from_row).collect()
     }
 
+    async fn list_by_workspace(&self, workspace_id: i64, user_id: i64) -> Result<Vec<Attachment>> {
+        let rows = sqlx::query(
+            "select a.id, a.item_id, a.filename, a.mime, a.size_bytes, a.uuid, a.created_at
+             from attachments a
+             join items i on i.id = a.item_id
+             join workspaces w on w.id = i.workspace_id and w.user_id = $2
+             where i.workspace_id = $1
+             order by a.id",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        rows.iter().map(attachment_from_row).collect()
+    }
+
     // 子树收集：自 anchor（join workspaces 限定归属）向下递归展开全部后代，
     // 再联 attachments——删除笔记前收集磁盘文件用。
     async fn list_by_item_tree(&self, item_id: i64, user_id: i64) -> Result<Vec<Attachment>> {

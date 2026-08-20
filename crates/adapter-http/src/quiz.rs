@@ -7,6 +7,7 @@
 use application::quiz::{AnswerOutcome, QuestionBrief};
 use axum::Json;
 use axum::extract::{Query, State};
+use axum::http::StatusCode;
 use domain::error::Error;
 use domain::practice::Chosen;
 use serde::Deserialize;
@@ -61,4 +62,25 @@ pub async fn answer(
             .submit(auth.0.id, body.question_id, body.chosen, body.scope)
             .await?,
     ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VideoAnswerRequest {
+    pub question_id: i64,
+    /// 训练视频附件 id 列表（附件已先经 /items/:id/attachments 上传，挂在题源笔记下）。
+    pub attachment_ids: Vec<i64>,
+    pub note: Option<String>,
+}
+
+/// POST /api/v1/quiz/video-answer —— 视频题作答：不判分，落 video_submit 事件供 AI 复盘。
+pub async fn video_answer(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    JsonBody(body): JsonBody<VideoAnswerRequest>,
+) -> Result<StatusCode, ApiError> {
+    state
+        .quiz
+        .submit_video(auth.0.id, body.question_id, body.attachment_ids, body.note)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

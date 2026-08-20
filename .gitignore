@@ -2,3 +2,13 @@
 /.idea
 __pycache__/
 *.pyc
+
+# 运行时产物：附件二进制（部署包由 package-server.sh 生成空目录）
+/attachments/
+
+# 本地测试下载的视频/媒体
+/video.mp4
+
+# 系统与 IDE 缓存
+.DS_Store
+/clients/android/.kotlin/

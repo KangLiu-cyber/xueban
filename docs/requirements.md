@@ -53,6 +53,8 @@ v7.1 变更：登录改为账号密码并支持注册（为订阅计费做准备
    - **弹出 Agent 接入弹框**：见第四节。
 3. 登录用户显示在侧边栏底部（头像 + 账号名）。
 
+4. **无感登录（自动保持登录）**：登录成功后客户端本地持久化会话凭证（网页/桌面 localStorage，安卓 SharedPreferences），下次打开自动校验并直接进入，无需重新输入账号密码。会话采用**滑动有效期**——连续 30 天不活跃才需重新登录，频繁使用即一直保持登录；同一账号可在网页、桌面、安卓多端同时保持登录，互不踢下线。
+
 ### 3.4 再次入口（必须可找回）
 
 用户可能当时点了"稍后接入"或没设置完整，之后必须能重新找到设置入口：
@@ -157,7 +159,7 @@ Agent 读取事件 → 复盘诊断 → 生成补充内容写回系统
 | 表 | 关键字段 |
 |:---|:---|
 | users | id, account, password_hash, nickname |
-| tokens | id, user_id, token, created_at, revoked_at |
+| tokens | id, user_id, token, created_at, revoked_at, last_used_at, expires_at |
 | workspaces | id, user_id, name（一件事一个空间）, exam_goal（手写文本）, exam_date |
 | items | id, workspace_id, parent_id（可自由嵌套）, kind, name, content, source（ai/user） |
 | annotations | id, item_id, user_id, anchor, text, source（ai/user） |
@@ -165,16 +167,20 @@ Agent 读取事件 → 复盘诊断 → 生成补充内容写回系统
 | events | id, user_id, item_id, action（annotate/answer/wrong/agent_write/checkin）, payload, created_at |
 
 - kind：note（笔记）/ quiz（习题），可扩展新类型。
+- 题型（questions.type）：single / multi / judge / **video**。video 为视频作答题——用户上传训练视频 + 训练想法，**不判对错、不进错题本**，提交落 `video_submit` 事件（payload 含 attachment_ids 与 note），由复盘 Agent 读取后生成复盘笔记写回。
 - items 删除级联：删除目录/笔记时，其子树、批注、归属习题与附件一并删除（`DELETE /api/v1/items/:id`）。附件二进制存宿主磁盘（`ATTACHMENTS_DIR/{user_id}/{uuid}`），表行随 item 级联删除，磁盘文件由服务端先收集子树附件再删除；崩溃窗口可能留下无表行引用的孤儿文件，无害且不占数据库空间。
+- workspaces 删除级联：删除备考空间时，其 items 子树、习题、组卷与附件一并删除（`DELETE /api/v1/workspaces/:id`，0004 迁移级联）；附件磁盘文件由服务端先收集空间下全部附件再删除。
 - 存储自由创建；**UI 呈现方式不与存储结构绑定，UI/UX 另行设计**（已定 v3 柔和版）。
 
 ## 九、MCP 接口
 
 bootstrap（能力下发）/ create_workspace / create_item / write_item / read_item /
 list_items（出参 `{items: [...]}`）/ add_annotation / save_questions（出参 `{ids: [...]}`）/
-get_events（出参 `{events: [...]}`）/ report_status / get_skill / upload_attachment。
+get_events（出参 `{events: [...]}`）/ report_status / get_skill / upload_attachment /
+read_attachment。
 
-- upload_attachment：Agent 为笔记上传图片附件（笔记正文 Markdown 图片由此进入系统）。入参 `{item_id, filename, content_base64}`（二进制经 base64 传输），出参 `{id, url: "/api/v1/attachments/{id}"}`；Agent 用 `![alt](url)` 写入笔记正文，客户端渲染时带 token 拉取展示。单文件 ≤ 10MB，仅接受 png/jpeg/gif/webp（魔数嗅探校验，拒绝 svg 防脚本注入）。
+- upload_attachment：Agent 为笔记上传媒体附件（图片/动图/视频，笔记正文 Markdown 媒体由此进入系统）。入参 `{item_id, filename, content_base64}`（二进制经 base64 传输），出参 `{id, url: "/api/v1/attachments/{id}"}`；Agent 用 `![alt](url)` 写入笔记正文，客户端渲染时带 token 拉取展示。单文件 ≤ 10MB，仅接受 png/jpeg/gif/webp/mp4/webm（魔数嗅探校验，拒绝 svg 防脚本注入）。
+  - read_attachment：Agent 读取附件二进制（复盘用）。入参 `{attachment_id}`，出参 `{id, filename, mime, content_base64}`；复盘 Agent 需要「看」用户上传的训练视频/图片时，用 video_submit 事件 payload 里的 attachment_ids 逐个调用本工具取回二进制做抽帧分析。
 
 - Agent 持 token 接入时，服务端自动下发 Skill、提示词、MCP 工具清单与 **Skill 目录全量内容**（`bootstrap` 出参 `skills: [{name, description, script}]`，含脚本，Agent 首次接入即自动安装；版本号随能力包升级）。Skill 目录 = 内置 + 用户自定义合并，同名时用户自定义覆盖内置（§4.2）。
 - skill 可随时按名经 `get_skill` 重新拉取（更新/修复安装），入参 `{name}`，出参 `{name, description, script}`；**用户自定义优先，无同名自定义时回退内置目录**。
@@ -259,10 +265,11 @@ get_events（出参 `{events: [...]}`）/ report_status / get_skill / upload_att
 
 - 教学视频 → AI 生成动作要领笔记（技术阶段拆解、常见错误与纠正、教练强调批注；配图/关键动作动图走附件）；
 - 每主题要领检验题 5~10 道（带答案与解析），刷题判分、答错自动归集错题本（复用备考版刷题/错题链路）；
+- **训练视频作业（视频作答题）**：每主题可含 1 道 `video` 题型——用户练完动作后上传训练视频/图片 + 训练想法，不判对错、不进错题本，提交落 `video_submit` 事件；Agent 经 `sports-review` skill 读取讲义 + 视频（read_attachment 抽帧）+ 训练想法，生成动作复盘笔记写回该集目录下（`POST /api/v1/quiz/video-answer` 提交）；
 - **训练打卡**（本期唯一新增平台能力）：每次训练记一笔——练了什么、练了多久、自评几分，事件入库供 AI 复盘读取；
 - AI 复盘：Agent 读取训练打卡与检验错题事件 → 诊断薄弱环节 → 写回纠正讲解笔记 + 个性化训练建议 + 针对性新题。
 
-**暂不做**：视频附件 mp4/webm 与长视频在线播放（先图片/gif/webp，长视频阶段二）、组卷模考（复用备考版）、训练录像动作分析、可穿戴设备接入、教练端、训练计划管理。
+**暂不做**：长视频在线播放（先 mp4/webm 短视频片段与 gif/webp 动图，长视频流媒体阶段二）、组卷模考（复用备考版）、训练录像动作分析、可穿戴设备接入、教练端、训练计划管理。
 
 ### 13.2 训练打卡事件（新增）
 
@@ -285,7 +292,7 @@ get_events（出参 `{events: [...]}`）/ report_status / get_skill / upload_att
 
 ### 13.5 内容资产
 
-- `skills/sports-training/`：体育 Skill 包（SKILL.md 含「教学视频 → 动作要领笔记 + 检验题」与「复盘诊断」两套流程脚本；`references/` 下羽毛球、核心训练两运动内容种子，供 Agent 生成时参照）。
+- `skills/sports-video-notes/`：体育视频笔记 Skill（教学视频 → 动作要领笔记，每个知识点配图/动图/视频，经 MCP 上传笔记平台；`references/` 下羽毛球、核心训练两运动内容种子）。`skills/sports-quiz/`：体育出题 Skill（基于笔记生成发力点/技术要点/常见错误检验题，`save_questions` 写入题库进入刷题闭环）。`skills/sports-review/`：体育复盘 Skill（读取视频作答题的讲义 + 训练视频抽帧 + 训练想法，生成动作复盘笔记写回该集目录下）。
 
 ## 十四、下一步
 

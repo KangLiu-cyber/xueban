@@ -1,5 +1,8 @@
 package com.xueban.app
 
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,7 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
@@ -48,6 +55,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -191,6 +199,7 @@ private sealed class MdBlock {
     class List(val ordered: Boolean, val items: kotlin.collections.List<String>) : MdBlock()
     class Table(val rows: kotlin.collections.List<kotlin.collections.List<String>>) : MdBlock()
     class Tip(val lines: kotlin.collections.List<String>) : MdBlock()
+    class Image(val alt: String, val attachmentId: Long) : MdBlock()
 }
 
 private fun headingLevel(t: String): Int? {
@@ -247,6 +256,15 @@ private fun renderTable(lines: List<String>, i: Int): Pair<List<List<String>>, I
 private fun splitCells(line: String): List<String> =
     line.trim().trim('|').split('|').map { inlinePlain(it.trim()) }
 
+/// 匹配整行图片：`![alt](/api/v1/attachments/{id})` → (alt, id)。
+private val IMAGE_LINE_RE = Regex("""!\[([^\]]*)\]\(/api/v1/attachments/(\d+)\)""")
+
+private fun parseImageLine(t: String): Pair<String, Long>? {
+    val m = IMAGE_LINE_RE.find(t) ?: return null
+    if (t.trim() != m.value) return null
+    return m.groupValues[1] to m.groupValues[2].toLong()
+}
+
 private fun parseMarkdown(src: String): List<MdBlock> {
     val lines = src.lines()
     val blocks = mutableListOf<MdBlock>()
@@ -257,7 +275,7 @@ private fun parseMarkdown(src: String): List<MdBlock> {
         if (t.isEmpty()) { i++; continue }
         val h = headingLevel(t)
         if (h != null) {
-            blocks.add(MdBlock.Heading(h, inlinePlain(t.substringAfter('#'))))
+            blocks.add(MdBlock.Heading(h, inlinePlain(t.trimStart().dropWhile { it == '#' }.trim())))
             i++
             continue
         }
@@ -301,12 +319,19 @@ private fun parseMarkdown(src: String): List<MdBlock> {
             }
             if (items.isNotEmpty()) { blocks.add(MdBlock.List(true, items)); continue }
         }
+        val img = parseImageLine(t)
+        if (img != null) {
+            blocks.add(MdBlock.Image(img.first, img.second))
+            i++
+            continue
+        }
         // 段落：收集直到空行或块级起始
         val para = mutableListOf<String>()
         while (i < lines.size) {
             val l = lines[i].trim()
             if (l.isEmpty() || headingLevel(l) != null || looksLikeTableRow(l) ||
-                l.startsWith(">") || l.startsWith("- ") || l.startsWith("* ")
+                l.startsWith(">") || l.startsWith("- ") || l.startsWith("* ") ||
+                parseImageLine(l) != null
             ) break
             para.add(inlinePlain(l))
             i++
@@ -455,7 +480,9 @@ private fun DirPane(
             subtitle = "备考空间 · AI 生成内容",
             trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CountdownChip(state.daysLeft()) { state.goalSheet = true }
+                    if (state.examDate.isNotBlank()) {
+                        CountdownChip(state.daysLeft()) { state.goalSheet = true }
+                    }
                     Avatar(
                         state.user?.nickname ?: state.user?.account ?: "学",
                         onClick = onTabToMe,
@@ -470,12 +497,14 @@ private fun DirPane(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            CountdownCard(
-                days = state.daysLeft(),
-                goal = state.workspace?.examGoal ?: "",
-                date = state.examDate,
-                onClick = { state.goalSheet = true },
-            )
+            if (state.examDate.isNotBlank()) {
+                CountdownCard(
+                    days = state.daysLeft(),
+                    goal = state.workspace?.examGoal ?: "",
+                    date = state.examDate,
+                    onClick = { state.goalSheet = true },
+                )
+            }
             SectionTitle("内容 · AI 生成（点目录展开）")
             if (courses.isEmpty()) {
                 Text(
@@ -816,6 +845,9 @@ private fun NoteBody(
                         )
                     }
                 }
+                is MdBlock.Image -> {
+                    NoteMedia(block.attachmentId, block.alt)
+                }
             }
         }
     }
@@ -839,28 +871,199 @@ private fun annoTargetBorder(annoMode: Boolean, onClick: () -> Unit): Modifier {
         }
 }
 
+// ---- 笔记媒体（图片 / 动图 / 视频）懒加载与渲染 ----
+
+private sealed class NoteMedia {
+    class Image(val bytes: ByteArray) : NoteMedia()
+    class Video(val path: String) : NoteMedia()
+}
+
+/** 笔记媒体：懒加载附件二进制（带 token 鉴权），按 mime 分发图片/视频。 */
+@Composable
+private fun NoteMedia(attachmentId: Long, alt: String) {
+    val context = LocalContext.current
+    var media by remember(attachmentId) { mutableStateOf<NoteMedia?>(null) }
+    LaunchedEffect(attachmentId) {
+        val data = Api.fetchAttachment(attachmentId)
+        media = data?.let { d ->
+            if (d.mime.startsWith("video/")) {
+                val ext = if (d.mime.contains("webm")) "webm" else "mp4"
+                val file = withContext(Dispatchers.IO) {
+                    val f = File(context.cacheDir, "attachment_$attachmentId.$ext")
+                    f.writeBytes(d.bytes)
+                    f
+                }
+                NoteMedia.Video(file.absolutePath)
+            } else {
+                NoteMedia.Image(d.bytes)
+            }
+        }
+    }
+    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        when (val m = media) {
+            null -> NoteMediaPlaceholder(alt)
+            is NoteMedia.Image -> NoteImageDrawable(m.bytes, alt)
+            is NoteMedia.Video -> NoteVideo(m.path)
+        }
+    }
+}
+
+@Composable
+private fun NoteMediaPlaceholder(alt: String) {
+    Text(
+        "🖼 $alt",
+        color = Xb.mutedLight, fontSize = 12.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Xb.surface2)
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+    )
+}
+
+/** 图片（含 gif/webp 动图）：API 28+ 用 ImageDecoder 支持动画，否则静态首帧。 */
+@Composable
+private fun NoteImageDrawable(bytes: ByteArray, alt: String) {
+    val context = LocalContext.current
+    val drawable = remember(bytes) {
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            runCatching {
+                val src = android.graphics.ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))
+                android.graphics.ImageDecoder.decodeDrawable(src)
+            }.getOrNull()
+        } else {
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                ?.let { android.graphics.drawable.BitmapDrawable(context.resources, it) }
+        }
+    }
+    if (drawable != null) {
+        AndroidView(
+            factory = { ctx ->
+                android.widget.ImageView(ctx).apply {
+                    setImageDrawable(drawable)
+                    (drawable as? android.graphics.drawable.AnimatedImageDrawable)?.start()
+                    scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    adjustViewBounds = true
+                    contentDescription = alt
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp)),
+        )
+    } else {
+        NoteMediaPlaceholder(alt)
+    }
+}
+
+/** 视频：写入临时文件后用 VideoView 播放。 */
+@Composable
+private fun NoteVideo(path: String) {
+    AndroidView(
+        factory = { ctx ->
+            android.widget.VideoView(ctx).apply {
+                setVideoPath(path)
+                setMediaController(android.widget.MediaController(ctx))
+                setOnPreparedListener { it.start() }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(220.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Xb.surface2),
+    )
+}
+
 // ==================== Sheet：考试目标 / 补充批注 / 批注详情 ====================
 
-/** sheetGoal：考试目标设置（手写填写 · 倒计时同步更新）。 */
+/** sheetGoal：考试目标设置（手写填写 · 倒计时同步更新 · 切换备考空间）。 */
 @Composable
 fun GoalSheet(state: AppState) {
+    var pendingDelete by remember { mutableStateOf<Workspace?>(null) }
     XbSheet(
         open = state.goalSheet,
         onDismiss = { state.goalSheet = false },
         title = "🎯 考试目标设置",
-        subtitle = "手写填写 · 倒计时同步更新",
+        subtitle = "切换备考空间 / 修改目标与日期",
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            // 切换备考空间
+            Text(
+                "切换备考空间",
+                color = Xb.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 7.dp),
+            )
+            Column(
+                Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.workspaces.forEach { ws ->
+                    val isCur = ws.id == state.workspace?.id
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isCur) Xb.accentLight else Xb.surface)
+                            .border(1.dp, if (isCur) Xb.accent else Xb.border, RoundedCornerShape(10.dp))
+                            .clickable { state.switchWorkspace(ws) }
+                            .padding(horizontal = 13.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                ws.name, color = Xb.ink, fontSize = 13.5.sp, fontWeight = FontWeight.Bold,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                ws.examGoal, color = Xb.muted, fontSize = 11.5.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        if (isCur) {
+                            Text("当前", color = Xb.accentDeep, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Text(
+                            "🗑",
+                            color = Xb.mutedLight, fontSize = 15.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { pendingDelete = ws }
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                if (state.workspaces.isEmpty()) {
+                    Text("暂无备考空间", color = Xb.mutedLight, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                }
+            }
             FormRow("考试目标（手写填写）") {
                 FormInput(state.examGoal, { state.examGoal = it }, placeholder = "如：软考 · 系统架构设计师")
             }
             FormRow("考试日期") {
                 FormInput(state.examDate, { state.examDate = it }, placeholder = "2026-11-07")
             }
-            XbButton("保存设置", onClick = {
+            XbButton("保存设置", modifier = Modifier.fillMaxWidth(), onClick = {
                 if (state.saveGoal(state.examGoal, state.examDate)) state.goalSheet = false
             })
         }
+    }
+    pendingDelete?.let { ws ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除备考空间", fontWeight = FontWeight.Bold) },
+            text = { Text("确定删除「${ws.name}」吗？\n空间下的目录、笔记、习题、错题、附件会一并删除，且不可恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDelete = null
+                    state.deleteWorkspace(ws)
+                }) { Text("删除", color = Xb.red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消", color = Xb.muted) }
+            },
+        )
     }
 }
 
@@ -910,7 +1113,7 @@ fun AnnoSheet(state: AppState) {
                 },
             )
             SpacerPad(16.dp)
-            XbButton("保存批注", onClick = {
+            XbButton("保存批注", modifier = Modifier.fillMaxWidth(), onClick = {
                 val text = state.annoText.trim()
                 if (text.isEmpty()) {
                     state.toast("批注内容不能为空")
@@ -961,6 +1164,7 @@ fun AnnoDetailSheet(state: AppState) {
             if (mine) {
                 XbButton(
                     "🗑 删除这条批注",
+                    modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         state.annoDetail = null
                         state.deleteAnnotation(anno.id)
@@ -969,7 +1173,7 @@ fun AnnoDetailSheet(state: AppState) {
                     textColor = Xb.red,
                 )
             } else {
-                XbButton("🤖 让 AI 解释", onClick = {
+                XbButton("🤖 让 AI 解释", modifier = Modifier.fillMaxWidth(), onClick = {
                     state.annoDetail = null
                     state.toast("已发送给 Agent 请求解答（演示）")
                 })

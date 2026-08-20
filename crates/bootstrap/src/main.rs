@@ -6,9 +6,10 @@
 //! - `MCP_ENDPOINT`：MCP 网关对外地址（随 Agent 凭证下发），默认 `http://<BIND_ADDR>/mcp`；
 //! - `SKILLS_DIR`：内置 Skill 目录，默认 `skills`（相对工作目录，一个子文件夹一个 skill）；
 //! - `ATTACHMENTS_DIR`：附件二进制根目录，默认 `attachments`（相对工作目录，布局
-//!   `{user_id}/{uuid}`，见 §8.1 附件端点）；
-//! - `WEB_DIST_DIR`：前端 web 静态产物目录，默认 `clients/web/dist`（相对工作目录，
-//!   由服务端静态托管，SPA 回退 index.html；`/api` 与 `/mcp` 未匹配路径保持 404）。
+//!   `{user_id}/{uuid}`，见 §8.1 附件端点）。
+//!
+//! 前端 web 产物不由本进程静态托管：部署侧由 nginx 直接 serve 前端产物并反向代理
+//! `/api/v1`、`/mcp`、`/healthz` 到本进程（见 deploy/nginx.conf、docs/architecture.md §11）。
 //!
 //! 六边形组装（P1-10）：仓储具体实现（adapter-postgres）在此实例化，
 //! 以 `Arc<dyn Trait + Send + Sync>` 注入用例服务（application），再注入
@@ -33,8 +34,6 @@ use application::space::SpaceService;
 use application::training::TrainingService;
 use application::wrong::WrongService;
 use axum::Router;
-use axum::http::{Request, StatusCode};
-use axum::response::IntoResponse;
 use domain::ports::{
     AnnotationRepository, AttachmentRepository, AttachmentStorage, CredentialIssuer, EventStore,
     ItemRepository, PaperRepository, PasswordHasher, QuestionRepository, QuizRecordRepository,
@@ -42,10 +41,7 @@ use domain::ports::{
 };
 use domain::skill::{Skill, parse_skill_file};
 use sqlx::postgres::PgPoolOptions;
-use tower::ServiceExt;
-use tower_http::map_response_body::MapResponseBody;
-use tower_http::services::{ServeDir, ServeFile};
-use tracing::{info, warn};
+use tracing::info;
 
 /// 加载系统内置 Skill 目录：`skills/` 下一个子文件夹一个 skill，
 /// 文件夹内取 `skill.md`（frontmatter name/description + 正文脚本，见 domain::skill）；
@@ -149,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(FsAttachmentStorage::new(attachments_dir));
     let attachments = Arc::new(AttachmentService::new(
         items.clone(),
-        attachment_repo,
+        attachment_repo.clone(),
         attachment_storage,
     ));
 
@@ -172,6 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         quiz_records,
         wrong_items.clone(),
         events.clone(),
+        attachment_repo.clone(),
     ));
     let wrong = Arc::new(WrongService::new(wrong_items.clone(), questions.clone()));
     let paper = Arc::new(PaperService::new(
@@ -205,33 +202,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let mcp_state = adapter_mcp::McpState::new(auth, space, agent, attachments);
 
-    // 前端静态托管（部署资产，见 docs/architecture.md §11）：REST 与 MCP 路由优先，
-    // 其余路径由服务端直接 serve 前端产物（默认 `clients/web/dist`，相对工作目录），
-    // SPA 回退 index.html；/api 与 /mcp 的未匹配路径保持 404，不回退到页面。
-    let web_dir = std::env::var("WEB_DIST_DIR").unwrap_or_else(|_| "clients/web/dist".to_owned());
-    let web_path = Path::new(&web_dir);
-    let web_serve = MapResponseBody::new(
-        ServeDir::new(web_path).not_found_service(ServeFile::new(web_path.join("index.html"))),
-        axum::body::Body::new,
-    );
-    if !web_path.is_dir() {
-        warn!(dir = %web_dir, "WEB_DIST_DIR 不存在，静态托管不可用（纯 API 服务不受影响）");
-    }
-    let app: Router = adapter_http::router(http_state)
-        .merge(adapter_mcp::router(mcp_state))
-        .fallback(move |req: Request<axum::body::Body>| {
-            let web_serve = web_serve.clone();
-            async move {
-                let path = req.uri().path();
-                if path.starts_with("/api") || path.starts_with("/mcp") {
-                    return (StatusCode::NOT_FOUND, "not found").into_response();
-                }
-                match web_serve.oneshot(req).await {
-                    Ok(resp) => resp.into_response(),
-                    Err(_) => StatusCode::NOT_FOUND.into_response(),
-                }
-            }
-        });
+    // 前端 web 产物由部署侧 nginx 托管并反代，本进程只挂 REST 与 MCP 路由
+    // （见 deploy/nginx.conf、docs/architecture.md §11）。
+    let app: Router = adapter_http::router(http_state).merge(adapter_mcp::router(mcp_state));
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
     axum::serve(listener, app).await?;

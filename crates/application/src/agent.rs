@@ -58,7 +58,7 @@ pub struct AgentStatus {
 }
 
 /// MCP 工具清单（与 docs/architecture.md §8.2 对齐）。
-const TOOLS: [&str; 11] = [
+const TOOLS: [&str; 13] = [
     "bootstrap",
     "create_workspace",
     "create_item",
@@ -70,6 +70,8 @@ const TOOLS: [&str; 11] = [
     "get_events",
     "report_status",
     "get_skill",
+    "upload_attachment",
+    "read_attachment",
 ];
 
 pub struct AgentService<W, I, Q, E, S>
@@ -398,9 +400,11 @@ mod tests {
         let cap = c.svc.bootstrap(1).await.unwrap();
         assert_eq!(cap.version, CAPABILITY_VERSION);
         assert!(cap.prompt.contains("软考架构师"));
-        assert_eq!(cap.tools.len(), 11);
+        assert_eq!(cap.tools.len(), 13);
         assert!(cap.tools.contains(&"save_questions".to_owned()));
         assert!(cap.tools.contains(&"get_skill".to_owned()));
+        assert!(cap.tools.contains(&"upload_attachment".to_owned()));
+        assert!(cap.tools.contains(&"read_attachment".to_owned()));
         // 无内置 skill 时清单为空。
         assert!(cap.skills.is_empty());
     }

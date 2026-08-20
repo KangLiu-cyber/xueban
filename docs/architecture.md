@@ -199,7 +199,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 ├── migrations/                  # SQL 迁移脚本
 ├── skills/                      # 内置 Skill 目录（一个子文件夹一个 skill，内含 skill.md）
 ├── scripts/                     # 工程脚本：门禁 / cross 交叉编译 / 安装包打包
-├── deploy/                      # 部署资产：server Dockerfile（仅 COPY musl 二进制）+ compose
+├── deploy/                      # 部署资产：server Dockerfile（仅 COPY musl 二进制）+ compose + nginx.conf
 ├── .github/workflows/           # CI：cross 编译 musl + trunk 编译 web + 安卓/桌面包 + 自动 Release
 └── docs/                        # 架构 / 需求文档与 UI 原型
 ```
@@ -213,7 +213,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 ### 6.1 身份与认证上下文
 
 - 密码使用 argon2id 哈希存储，不存明文；密码强度校验在领域层（值对象 `Password`）。
-- 登录成功签发长期 token，同一用户可存在多个 token（客户端一个、Agent 一个），支持单独吊销。Token 是实体，`purpose` 区分 client / agent。
+- 登录签发 **client token**（客户端会话凭证），支持多设备并存：登录不吊销其他设备的 client token，网页/桌面/安卓各持独立会话、互不踢下线。client token 采用**滑动有效期**——签发时设为 30 天，之后每次鉴权通过把过期时间顺延 30 天并刷新活跃时间（`last_used_at`），即「频繁使用即不退出」，连续 30 天不活跃才需重新登录。**agent token** 永不过期（仅可换发/吊销），供 Agent 长期接入。Token 是实体，`purpose` 区分 client / agent。
 - 考试目标（手写文本）与考试日期属于 Workspace 聚合，注册后第二步填写。
 
 ### 6.2 学习空间上下文
@@ -221,19 +221,19 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 - Workspace 聚合根保存 `exam_goal`（手写文本，不做枚举）与 `exam_date`，客户端据此渲染倒计时。
 - Item 分两类：`dir`（目录）与 `note`（笔记），通过 parent_id 任意嵌套。树的不变式在领域服务中维护：节点不可挂到自身子树下（防环）。
 - Annotation 区分作者：`ai`（Agent 写入的老师强调、考点提示）与 `user`（用户手写）。AI 批注不可被用户修改，只能删除；用户批注可编辑删除。锚点以正文引用片段定位。
-- Attachment 是笔记的图片附件，只挂 note（is_note 校验，同 annotate）：二进制存宿主磁盘 `ATTACHMENTS_DIR/{user_id}/{uuid}`（uuid 服务端生成、无扩展名，杜绝路径注入与伪造文件名），元数据存库（filename/mime/size_bytes）。mime 以魔数嗅探结果为准（白名单 png/jpeg/gif/webp，拒绝 svg 防脚本注入），上限 10MB。写入顺序：先落文件后插表行，插行失败回滚删文件；删除笔记时服务端先 `WITH RECURSIVE` 收集整棵子树附件、删磁盘文件，再删 item（表行由 DB 级联兜底）。崩溃窗口可能留下无表行引用的孤儿文件——无害，不做回收（折衷写进 §七）。
+- Attachment 是笔记的媒体附件（图片/动图/视频），只挂 note（is_note 校验，同 annotate）：二进制存宿主磁盘 `ATTACHMENTS_DIR/{user_id}/{uuid}`（uuid 服务端生成、无扩展名，杜绝路径注入与伪造文件名），元数据存库（filename/mime/size_bytes）。mime 以魔数嗅探结果为准（白名单 png/jpeg/gif/webp（图片/动图）+ mp4/webm（视频），拒绝 svg 防脚本注入），上限 10MB。写入顺序：先落文件后插表行，插行失败回滚删文件；删除笔记时服务端先 `WITH RECURSIVE` 收集整棵子树附件、删磁盘文件，再删 item（表行由 DB 级联兜底）。崩溃窗口可能留下无表行引用的孤儿文件——无害，不做回收（折衷写进 §七）。
 - 所有写入校验 `workspace.user_id == 当前用户`，user_id 来自 token 解析的上下文，不接受客户端声明。
 
 ### 6.3 练习上下文
 
-- Question 必须关联某个笔记 Item（即"集"），这是刷题范围与组卷筛选的唯一归属维度。题目值对象含题型、题干、选项、答案、解析。
+- Question 必须关联某个笔记 Item（即"集"），这是刷题范围与组卷筛选的唯一归属维度。题目值对象含题型、题干、选项、答案、解析。题型四种：`single`/`multi`/`judge` 可判分；`video` 为视频作答题（无标准答案），不判分、不进错题本，提交落 `video_submit` 事件供复盘 Agent 读取。
 - 作答判定是领域纯函数：`Question::judge` 返回对错，应用层据此追加 QuizRecord 并更新 WrongItem。
 - WrongItem 聚合：同一题错多次记 `times`，用户可标记 `mastered`；重做只针对单题，不产生新的刷题会话。
 - Paper 聚合：组卷是"筛选条件 + 题目快照"，抽题是领域服务（来源、题型、范围、数量约束，不足时按规则补齐）；交卷判分后写结果并重算错题本。
 
 ### 6.4 协作事件上下文
 
-- Event 只追加不修改，记录 annotate、answer、wrong、agent_write、checkin 等行为，按 user_id 查询。checkin 为训练打卡事件（体育领域包），payload 存 `{sport, activity, duration_minutes, rating, note?}`，供复盘 Agent 经 ReadEvents 读取。
+- Event 只追加不修改，记录 annotate、answer、wrong、agent_write、checkin、video_submit 等行为，按 user_id 查询。checkin 为训练打卡事件（体育领域包），payload 存 `{sport, activity, duration_minutes, rating, note?}`，供复盘 Agent 经 ReadEvents 读取。video_submit 为视频题作答事件（体育领域包），payload 存 `{question_id, attachment_ids, note?}`，供复盘 Agent 经 ReadEvents 读取后配合 read_attachment 抽帧复盘。
 - 复盘闭环的数据基础：Agent 通过 ReadEvents 拿到最近的错题与答题行为，生成复盘内容写回学习空间。
 
 ## 七、数据模型
@@ -251,12 +251,14 @@ users (
 )
 
 tokens (
-  id         bigserial primary key,
-  user_id    bigint not null references users,
-  token      text unique not null,         -- usr_ 前缀
-  purpose    text not null,                -- client | agent
-  revoked_at timestamptz,
-  created_at timestamptz default now()
+  id           bigserial primary key,
+  user_id      bigint not null references users,
+  token        text unique not null,       -- usr_ 前缀
+  purpose      text not null,              -- client | agent
+  revoked_at   timestamptz,
+  last_used_at timestamptz,                -- 最近活跃时间（滑动续期刷新）
+  expires_at   timestamptz,                -- 过期时间（client 30 天滑动；agent/存量 NULL=永不过期）
+  created_at   timestamptz default now()
 )
 
 -- 学习空间
@@ -297,7 +299,7 @@ attachments (
   id         bigserial primary key,
   item_id    bigint not null references items on delete cascade,
   filename   text not null,                -- 原始文件名（仅展示用）
-  mime       text not null,                -- 以魔数嗅探结果为准，白名单 png/jpeg/gif/webp
+  mime       text not null,                -- 以魔数嗅探结果为准，白名单 png/jpeg/gif/webp/mp4/webm
   size_bytes bigint not null,
   uuid       text unique not null,         -- 磁盘文件名 {ATTACHMENTS_DIR}/{user_id}/{uuid}
   created_at timestamptz default now()
@@ -372,9 +374,11 @@ events (
 | 认证 | `POST /api/v1/auth/register` | Register |
 | 认证 | `POST /api/v1/auth/login` | Login |
 | 认证 | `POST /api/v1/auth/logout` | Logout |
+| 认证 | `GET /api/v1/auth/me` | 会话恢复（无感登录：校验 token，返回用户与 `last_used_at`/`expires_at`） |
 | 空间 | `GET /api/v1/workspaces` | BrowseTree（空间列表） |
 | 空间 | `POST /api/v1/workspaces` | ManageExamGoal（创建空间） |
 | 空间 | `PUT /api/v1/workspaces/:id` | ManageExamGoal（更新目标/日期） |
+| 空间 | `DELETE /api/v1/workspaces/:id` | ManageExamGoal（删除空间，级联 items/questions/papers，附件文件先清） |
 | 内容 | `GET /api/v1/workspaces/:id/tree` | BrowseTree |
 | 内容 | `GET /api/v1/items/:id` | ReadNote |
 | 内容 | `DELETE /api/v1/items/:id` | ManageContent（删除，级联子树/批注/归属题目） |
@@ -386,6 +390,7 @@ events (
 | 附件 | `DELETE /api/v1/attachments/:id` | DeleteAttachment（删除笔记时级联清理整棵子树附件文件） |
 | 刷题 | `GET /api/v1/quiz/questions?scope=` | DrawQuestions |
 | 刷题 | `POST /api/v1/quiz/answer` | SubmitAnswer |
+| 刷题 | `POST /api/v1/quiz/video-answer` | SubmitVideoAnswer（视频题：上传训练视频附件 + 训练想法，不判分，落 video_submit 事件） |
 | 错题 | `GET /api/v1/wrong` | ListWrong |
 | 错题 | `GET /api/v1/wrong/stats` | WrongStats（累计/近 7 天新增/已掌握，错题本统计卡片） |
 | 错题 | `POST /api/v1/wrong/:id/master` | MarkMastered |
@@ -422,6 +427,7 @@ MCP tool handler 与 REST handler 一样只做协议翻译，复用同一组用�
 | `report_status` | ReportStatus |
 | `get_skill` | GetSkill（按名拉取 skill 完整内容，含脚本，重新安装/更新用；用户自定义优先，无同名自定义时回退内置目录） |
 | `upload_attachment` | UploadAttachment（Agent 上传笔记图片：`{item_id, filename, content_base64}` → `{id, url}`，与 REST 同校验；base64 解码后走同一用例） |
+| `read_attachment` | ReadAttachment（Agent 读取附件二进制：`{attachment_id}` → `{id, filename, mime, content_base64}`；复盘 Agent 读取 video_submit 事件中的训练视频/图片做抽帧分析） |
 
 MCP 适配器的强制规则：
 
@@ -487,7 +493,7 @@ Agent 生成（原始数据）                使用过程（派生数据）
 - 隔离：数据归属链为 token → user → workspace → items/questions/...。用例上下文统一携带 user_id，仓储实现强制在 SQL 中附加该条件；MCP 工具入参中不存在用户身份字段，从协议层杜绝串用户。
 - 传输：全站 HTTPS；MCP 通道同样走 HTTPS。
 - 审计：Agent 的每次写入、用户的每次作答都落 events 表，可按用户回溯全部内容变更。
-- 输入校验：驱动适配器做协议层校验（格式、大小），领域层做业务校验（归属、不变式）。笔记正文与题目写入有大小上限（单 item 正文 ≤ 512KB，单批题目 ≤ 200 题）；附件 ≤ 10MB，MIME 以魔数嗅探为准（白名单 png/jpeg/gif/webp），读取带 `X-Content-Type-Options: nosniff`。
+- 输入校验：驱动适配器做协议层校验（格式、大小），领域层做业务校验（归属、不变式）。笔记正文与题目写入有大小上限（单 item 正文 ≤ 512KB，单批题目 ≤ 200 题）；附件 ≤ 10MB，MIME 以魔数嗅探为准（白名单 png/jpeg/gif/webp/mp4/webm），读取带 `X-Content-Type-Options: nosniff`。
 - 限流：REST 与 MCP 均按 token 限流，REST 鉴权通过后另按账号（user_id）封顶，防多 token 叠加绕限；注册接口按 IP 限流防刷。计数为进程内存固定窗口（单机部署足够，Redis 二期可选引入，见 §9）。
 
 ## 十一、部署架构
@@ -497,17 +503,21 @@ Agent 生成（原始数据）                使用过程（派生数据）
 ```
 ┌────────────────────────────────────────────┐
 │  单台云服务器（2C4G 起步）                      │
-│  ┌──────────────────┐   ┌───────────────┐  │
-│  │ server（Rust 单进程 │──▶│ PostgreSQL 16 │  │
-│  │  musl 静态二进制，     │   └───────────────┘  │
-│  │  REST + MCP + 静态托管） │                   │
-│  └──────────────────┘                        │
+│  ┌──────────────┐                          │
+│  │ nginx（静态前端   │                          │
+│  │  + 反代 /api /mcp）│                          │
+│  └──────┬───────┘                          │
+│         │ 反向代理                            │
+│  ┌──────▼───────┐   ┌───────────────┐      │
+│  │ server（Rust 单 │──▶│ PostgreSQL 16 │      │
+│  │  进程，REST+MCP） │   └───────────────┘      │
+│  └──────────────┘                          │
 └────────────────────────────────────────────┘
 ```
 
-- **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制 + trunk 编译前端 web 产物，`scripts/package-server.sh` 打成安装包（tar.gz：`deploy/` + `scripts/` + `skills/` + 二进制按仓库路径 + `clients/web/dist`，解压即部署源）。`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录与前端 web 产物由 compose 只读挂载（`../skills:/app/skills:ro`、`../clients/web/dist:/app/clients/web/dist:ro`），宿主直接替换挂载目录内容即更新，无需重建镜像。解压后 `scripts/start.sh` 一键启动（缺 musl 二进制/前端产物时自动补齐，等待健康检查通过后提示就绪），`scripts/stop.sh` 一键停止（保留 pgdata 数据卷）。
-- **前端由服务端静态托管**：不做 nginx 容器。bootstrap 挂 SPA fallback——REST 与 MCP 路由优先，其余路径由 server 直接 serve 前端产物（`WEB_DIST_DIR`，默认相对路径 `clients/web/dist`，与 skills 同挂载模式），未命中文件回退 `index.html`；`/api` 与 `/mcp` 的未匹配路径保持 404，不回退到页面。前端 API 基址走浏览器运行期同源兜底（location.origin），与 MCP 天然同源。
-- **compose 编排两个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `server`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT`/`ATTACHMENTS_DIR` 环境变量注入）。浏览器访问 `http://<host>:8080`，MCP 端点对外为 `http://<host>:8080/mcp`。
+- **镜像不编译**：CI（GitHub Actions）用 cross 交叉编译 `x86_64-unknown-linux-musl` 静态二进制 + trunk 编译前端 web 产物，`scripts/package-server.sh` 打成安装包（tar.gz：`deploy/` + `scripts/` + `skills/` + 二进制按仓库路径 + `clients/web/dist`，解压即部署源）。`deploy/Dockerfile` 基于 alpine，只把二进制 COPY 进去，镜像仅用于启动验证/运行；skills/ 目录由 compose 只读挂载进 server（`../skills:/app/skills:ro`），前端 web 产物由 compose 只读挂载进 nginx（`../clients/web/dist:/usr/share/nginx/html:ro`），宿主直接替换挂载目录内容即更新，无需重建镜像。解压后 `scripts/start.sh` 一键启动（缺 musl 二进制/前端产物时自动补齐，等待健康检查通过后提示就绪），`scripts/stop.sh` 一键停止（保留 pgdata 数据卷）。
+- **前端由 nginx 托管并反代**：不做服务端静态托管。nginx 容器（`nginx:1.27-alpine`，配置见 `deploy/nginx.conf`）直接 serve 前端产物（SPA 回退 `index.html`），并把 `/api/v1`、`/mcp`、`/healthz` 反向代理到 server 容器的 8080；`/mcp` 为 streamable-http（SSE 流式），关闭缓冲、拉长读写超时。前端 API 基址走浏览器运行期同源兜底（location.origin），与 API/MCP 天然同源。
+- **compose 编排三个服务**：`postgres`（postgres:16-alpine，带 healthcheck 与数据卷）+ `server`（依赖 pg 健康后启动，`DATABASE_URL`/`BIND_ADDR`/`MCP_ENDPOINT`/`ATTACHMENTS_DIR` 环境变量注入，仅对内 expose 8080，不映射宿主端口）+ `nginx`（依赖 server 健康后启动，对外映射 `8090:80`）。浏览器访问 `http://<host>:8090`，MCP 端点对外为 `http://<host>:8090/mcp`。
 - **附件目录**：笔记图片二进制存宿主磁盘，`ATTACHMENTS_DIR` env（默认相对路径 `attachments`）指向 compose 可写挂载 `../attachments:/app/attachments`，与 skills 同"宿主编辑即生效"模式；布局 `{user_id}/{uuid}`，随用户增长，备份策略与 pgdata 数据卷一致（部署侧 cron 负责）。
 - **打固定版本 tag 才触发 CI**：`on.push` 只监听 `v*` tag——不打 tag（日常推 main 等分支）不触发 CI；推送 `v*` tag（如 `v0.1.0`，版本号手动固定）即触发整条流水线，gate + build-musl + android + desktop 通过后创建 GitHub Release（用所打的 tag），上传**三个独立交付物**——服务端部署包（tar.gz，docker 部署源）、安卓 APK、桌面端安装包（Linux .deb / .AppImage）。pull_request 只跑 gate 门禁。
 - **客户端端点域名由 CI 注入**：本地开发默认走模拟器/本地回环（安卓 `http://10.0.2.2:8080/api/v1`、桌面同源/127.0.0.1），生产构建在 CI 显式覆盖——安卓 `./gradlew -PapiBaseUrl=https://buildstore.mjcode.top/api/v1`（gradle 属性 → BuildConfig.API_BASE_URL），桌面 `XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build`（env 传给 trunk 构建期 `base_url()` 解析，优先级最高）。改域名只动 CI，不动客户端默认值。
@@ -538,7 +548,7 @@ Agent 生成（原始数据）                使用过程（派生数据）
 | 桌面端 | Tauri + Web 前端 | 按 v3 柔和版原型实现 |
 | 安卓端 | Kotlin + Jetpack Compose + Material 3 | 按安卓原型 v1 实现；WindowSizeClass 处理折叠屏（≥600dp 双栏） |
 | Agent 接入 | MCP over HTTPS | 能力包 = Skill + 提示词 + 工具清单 |
-| 部署 | Docker Compose + Caddy | 单机起步 |
+| 部署 | Docker Compose + nginx | 单机起步 |
 
 ## 十四、实施里程碑
 

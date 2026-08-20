@@ -243,11 +243,11 @@ async fn load_episode(state: AppState, quiz_count: RwSignal<u32>, c: usize, e: u
 
 // ---- 渲染 ----
 
-/// 笔记图片懒加载：markdown 渲染的 img 仅带 data-uid（附件 id），src 需
-/// 经鉴权 fetch → Blob → objectURL 补全（<img> 无法携带 Authorization
-/// header）；已有 src 的跳过，避免重渲染重复拉取。失败置 data-error，
-/// 由 CSS 展示占位，不阻塞笔记阅读。
-async fn load_note_images(item_id: i64) {
+/// 笔记媒体懒加载：markdown 渲染的附件占位 img 仅带 data-uid（附件 id），
+/// src 需经鉴权 fetch → Blob → objectURL 补全（`<img>`/`<video>` 无法携带
+/// Authorization header）；按返回的 mime 决定：video/* 用 `<video controls>`
+/// 替换占位 img，其余按图片赋 src。失败置 data-error，不阻塞笔记阅读。
+async fn load_note_media(item_id: i64) {
     let Ok(list) = document().query_selector_all(&format!(
         "[data-item-id=\"{}\"] img[data-uid]",
         item_id
@@ -269,18 +269,33 @@ async fn load_note_images(item_id: i64) {
             continue;
         };
         match api::fetch_attachment(uid).await {
-            Ok(bytes) => {
+            Ok((mime, bytes)) => {
                 let u8a = js_sys::Uint8Array::from(&bytes[..]);
                 if let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(&u8a.into()) {
                     if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
-                        img.set_src(&url);
+                        if mime.starts_with("video/") {
+                            // 视频：用 <video controls> 替换占位 <img>。
+                            if let Ok(video) = document().create_element("video") {
+                                if let Ok(v) = video.dyn_into::<web_sys::HtmlVideoElement>() {
+                                    let _ = v.set_attribute("controls", "");
+                                    let _ = v.set_attribute("class", "note-video");
+                                    let _ = v.set_attribute("playsinline", "");
+                                    v.set_src(&url);
+                                    if let Some(parent) = img.parent_element() {
+                                        let _ = parent.replace_child(&v, &img);
+                                    }
+                                }
+                            }
+                        } else {
+                            img.set_src(&url);
+                        }
                     }
                 }
             }
             Err(e) => {
                 // img 是 replaced element，伪元素不渲染，错误文本挂到父级 p。
                 if let Some(p) = img.parent_element() {
-                    p.set_attribute("data-error", &format!("图片加载失败：{}", e))
+                    p.set_attribute("data-error", &format!("附件加载失败：{}", e))
                         .ok();
                 }
             }
@@ -305,7 +320,7 @@ fn note_card(state: AppState, b: &ItemBundle) -> AnyView {
     let img_uid = item_id;
     // 挂载后（微任务时 DOM 已在树）异步拉取笔记图片。
     spawn_local(async move {
-        load_note_images(img_uid).await;
+        load_note_media(img_uid).await;
     });
     let title = b.item.name.clone();
     let date = fmt_date_ymd(b.item.created_at);

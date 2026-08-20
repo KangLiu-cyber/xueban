@@ -49,6 +49,7 @@ pub fn type_label(q: &QuestionBrief) -> &'static str {
         QuestionType::Single => "单选题",
         QuestionType::Multi => "多选题",
         QuestionType::Judge => "判断题",
+        QuestionType::Video => "视频作答题",
     }
 }
 
@@ -58,6 +59,7 @@ pub fn type_label_short(q: &QuestionBrief) -> &'static str {
         QuestionType::Single => "单选",
         QuestionType::Multi => "多选",
         QuestionType::Judge => "判断",
+        QuestionType::Video => "视频作答",
     }
 }
 

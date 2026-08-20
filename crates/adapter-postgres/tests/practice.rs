@@ -42,6 +42,7 @@ fn question(workspace_id: i64, source_item_id: i64, qtype: QuestionType) -> Ques
             QuestionType::Single => Answer::Single(1),
             QuestionType::Multi => Answer::Multi(BTreeSet::from([0, 2])),
             QuestionType::Judge => Answer::Judge(true),
+            QuestionType::Video => Answer::Video,
         },
         explanation: Some("解析".into()),
         created_at: Utc::now(),

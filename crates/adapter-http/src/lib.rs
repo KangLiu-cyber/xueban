@@ -68,6 +68,7 @@ pub type PgQuizService = QuizService<
     dyn QuizRecordRepository + Send + Sync,
     dyn WrongItemRepository + Send + Sync,
     dyn EventStore + Send + Sync,
+    dyn AttachmentRepository + Send + Sync,
 >;
 
 pub type PgWrongService =
@@ -176,11 +177,15 @@ pub fn router(state: AppState) -> Router {
 
     let protected = Router::new()
         .merge(attachment_upload)
+        .route("/auth/me", get(auth::me))
         .route(
             "/workspaces",
             get(space::list_workspaces).post(space::create_workspace),
         )
-        .route("/workspaces/{id}", put(space::update_workspace))
+        .route(
+            "/workspaces/{id}",
+            put(space::update_workspace).delete(space::delete_workspace),
+        )
         .route("/workspaces/{id}/tree", get(space::tree))
         .route(
             "/items/{id}",
@@ -193,6 +198,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/quiz/questions", get(quiz::draw))
         .route("/quiz/answer", post(quiz::answer))
+        .route("/quiz/video-answer", post(quiz::video_answer))
         .route("/wrong", get(wrong::list))
         .route("/wrong/stats", get(wrong::stats))
         .route("/wrong/{id}/master", post(wrong::mark_mastered))

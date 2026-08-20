@@ -334,7 +334,7 @@ impl McpService {
     #[tool(
         name = "upload_attachment",
         title = "上传笔记图片",
-        description = "向笔记上传图片附件（png/jpeg/gif/webp，≤10MB）：二进制以 base64 传入，服务端做魔数嗅探与归属校验。返回附件 id 与读取 URL（/api/v1/attachments/{id}，带登录态访问）。用于在笔记正文中以 ![alt](url) 引用图片。"
+        description = "向笔记上传附件（图片/动图/视频：png/jpeg/gif/webp/mp4/webm，≤10MB）：二进制以 base64 传入，服务端做魔数嗅探与归属校验。返回附件 id 与读取 URL（/api/v1/attachments/{id}，带登录态访问）。用于在笔记正文中以 ![alt](url) 引用（图片/动图/视频均用同一写法）。"
     )]
     async fn upload_attachment(
         &self,
@@ -352,6 +352,34 @@ impl McpService {
             .map(AttachmentDto::from)
             .map(Json)
             .map_err(map_err)
+    }
+
+    /// ReadAttachment（Agent 入口）：读取附件二进制（复盘用）。Agent 需要
+    /// 「看」用户上传的训练视频/图片做动作复盘时，用本工具取回二进制
+    /// （base64 返回，含 mime 与文件名）。
+    #[tool(
+        name = "read_attachment",
+        title = "读取附件内容",
+        description = "读取某个附件的二进制内容（base64 返回，含 mime 与文件名）。复盘 Agent 需要查看用户上传的训练视频/图片时使用：视频题作答事件（video_submit）payload 里的 attachment_ids 即附件 id。"
+    )]
+    async fn read_attachment(
+        &self,
+        Extension(parts): Extension<Parts>,
+        Parameters(input): Parameters<ReadAttachmentInput>,
+    ) -> Result<Json<ReadAttachmentOutput>, ErrorData> {
+        let user = self.user(&parts)?;
+        let (att, bytes) = self
+            .state
+            .attachments
+            .read(user.id, input.attachment_id)
+            .await
+            .map_err(map_err)?;
+        Ok(Json(ReadAttachmentOutput {
+            id: att.id,
+            filename: att.filename,
+            mime: att.mime,
+            content_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+        }))
     }
 }
 
@@ -532,6 +560,7 @@ pub enum EventActionDto {
     Wrong,
     AgentWrite,
     Checkin,
+    VideoSubmit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -551,15 +580,18 @@ pub enum QuestionTypeDto {
     Single,
     Multi,
     Judge,
+    Video,
 }
 
 /// 线格式与 domain::practice::Answer 一致（untagged，§8.1）。
+/// video 题为无标准答案，序列化为 null（AnswerDto::Video）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum AnswerDto {
     Single(usize),
     Multi(BTreeSet<usize>),
     Judge(bool),
+    Video,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -609,6 +641,21 @@ pub struct UploadAttachmentInput {
 pub struct AttachmentDto {
     pub id: i64,
     pub url: String,
+}
+
+/// read_attachment 入参。
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct ReadAttachmentInput {
+    pub attachment_id: i64,
+}
+
+/// read_attachment 出参：附件二进制 base64 + mime + 文件名（复盘 Agent 用）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct ReadAttachmentOutput {
+    pub id: i64,
+    pub filename: String,
+    pub mime: String,
+    pub content_base64: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -715,6 +762,7 @@ impl From<EventAction> for EventActionDto {
             EventAction::Wrong => EventActionDto::Wrong,
             EventAction::AgentWrite => EventActionDto::AgentWrite,
             EventAction::Checkin => EventActionDto::Checkin,
+            EventAction::VideoSubmit => EventActionDto::VideoSubmit,
         }
     }
 }
@@ -739,6 +787,7 @@ impl From<QuestionTypeDto> for QuestionType {
             QuestionTypeDto::Single => QuestionType::Single,
             QuestionTypeDto::Multi => QuestionType::Multi,
             QuestionTypeDto::Judge => QuestionType::Judge,
+            QuestionTypeDto::Video => QuestionType::Video,
         }
     }
 }
@@ -749,6 +798,7 @@ impl From<AnswerDto> for Answer {
             AnswerDto::Single(i) => Answer::Single(i),
             AnswerDto::Multi(s) => Answer::Multi(s),
             AnswerDto::Judge(b) => Answer::Judge(b),
+            AnswerDto::Video => Answer::Video,
         }
     }
 }

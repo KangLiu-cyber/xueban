@@ -54,6 +54,16 @@ pub struct AuthResponse {
     pub user: UserDto,
 }
 
+/// 会话恢复响应：用户信息 + 活跃时间（无感登录 & 记录登录时间用）。
+#[derive(Debug, Serialize)]
+pub struct MeResponse {
+    pub user: UserDto,
+    /// 最近一次活跃时间（登录/滑动续期都会刷新）。
+    pub last_used_at: Option<DateTime<Utc>>,
+    /// 会话过期时间（None 表示永不过期）。
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
 /// POST /api/v1/auth/register
 pub async fn register(
     State(state): State<AppState>,
@@ -83,6 +93,23 @@ pub async fn login(
         token: token.token,
         user: user.into(),
     }))
+}
+
+/// GET /api/v1/auth/me —— 会话恢复：校验 client token 并返回用户与活跃时间。
+/// 供客户端启动时无感恢复登录态；token 无效/过期时经 require_auth 中间件返回 401。
+pub async fn me(State(state): State<AppState>, req: Request) -> Response {
+    let Some(token) = bearer_token(req.headers()) else {
+        return crate::error::unauthorized();
+    };
+    match state.auth.me(&token).await {
+        Ok((user, t)) => Json(MeResponse {
+            last_used_at: t.last_used_at,
+            expires_at: t.expires_at,
+            user: user.into(),
+        })
+        .into_response(),
+        Err(e) => ApiError::from(e).into_response(),
+    }
 }
 
 /// POST /api/v1/auth/logout —— 公开路由：吊销后的 token 已过不了鉴权

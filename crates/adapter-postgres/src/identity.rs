@@ -104,13 +104,15 @@ impl PgTokenRepository {
 impl TokenRepository for PgTokenRepository {
     async fn insert(&self, token: &Token) -> Result<i64> {
         let row = sqlx::query(
-            "insert into tokens (user_id, token, purpose, revoked_at)
-             values ($1, $2, $3, $4) returning id",
+            "insert into tokens (user_id, token, purpose, revoked_at, last_used_at, expires_at)
+             values ($1, $2, $3, $4, $5, $6) returning id",
         )
         .bind(token.user_id)
         .bind(&token.token)
         .bind(token.purpose.as_str())
         .bind(token.revoked_at)
+        .bind(token.last_used_at)
+        .bind(token.expires_at)
         .fetch_one(&self.pool)
         .await
         .map_err(map_sqlx_error)?;
@@ -119,7 +121,7 @@ impl TokenRepository for PgTokenRepository {
 
     async fn find_by_token(&self, token: &str) -> Result<Option<Token>> {
         sqlx::query(
-            "select id, user_id, token, purpose, revoked_at
+            "select id, user_id, token, purpose, revoked_at, last_used_at, expires_at
              from tokens where token = $1",
         )
         .bind(token)
@@ -136,7 +138,7 @@ impl TokenRepository for PgTokenRepository {
         purpose: TokenPurpose,
     ) -> Result<Option<Token>> {
         sqlx::query(
-            "select id, user_id, token, purpose, revoked_at
+            "select id, user_id, token, purpose, revoked_at, last_used_at, expires_at
              from tokens where user_id = $1 and purpose = $2 and revoked_at is null
              order by id desc limit 1",
         )
@@ -180,6 +182,25 @@ impl TokenRepository for PgTokenRepository {
         .map_err(map_sqlx_error)?;
         Ok(())
     }
+
+    async fn touch(
+        &self,
+        token: &str,
+        last_used_at: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query(
+            "update tokens set last_used_at = $2, expires_at = $3
+             where token = $1 and expires_at is not null",
+        )
+        .bind(token)
+        .bind(last_used_at)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await
+        .map_err(map_sqlx_error)?;
+        Ok(())
+    }
 }
 
 fn token_from_row(row: &PgRow) -> Result<Token> {
@@ -191,6 +212,12 @@ fn token_from_row(row: &PgRow) -> Result<Token> {
         purpose: purpose_from_str(&purpose)?,
         revoked_at: row
             .try_get::<Option<DateTime<Utc>>, _>("revoked_at")
+            .map_err(map_sqlx_error)?,
+        last_used_at: row
+            .try_get::<Option<DateTime<Utc>>, _>("last_used_at")
+            .map_err(map_sqlx_error)?,
+        expires_at: row
+            .try_get::<Option<DateTime<Utc>>, _>("expires_at")
             .map_err(map_sqlx_error)?,
     })
 }

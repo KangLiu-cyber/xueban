@@ -86,6 +86,7 @@ fn action_from_str(s: &str) -> Result<EventAction> {
         "wrong" => Ok(EventAction::Wrong),
         "agent_write" => Ok(EventAction::AgentWrite),
         "checkin" => Ok(EventAction::Checkin),
+        "video_submit" => Ok(EventAction::VideoSubmit),
         other => Err(Error::Storage(format!("未知事件动作: {other}"))),
     }
 }
@@ -104,6 +105,10 @@ mod tests {
             EventAction::AgentWrite
         );
         assert_eq!(action_from_str("checkin").unwrap(), EventAction::Checkin);
+        assert_eq!(
+            action_from_str("video_submit").unwrap(),
+            EventAction::VideoSubmit
+        );
         assert!(action_from_str("update").is_err());
     }
 }

@@ -59,6 +59,28 @@ pub async fn update_workspace(
     ))
 }
 
+/// DELETE /api/v1/workspaces/:id —— 删除空间。
+/// 先收集空间下全部附件清磁盘文件（行由 DB ON DELETE CASCADE 兜底删），
+/// 再删空间；items/questions/papers 由 0004 迁移级联清理。
+pub async fn delete_workspace(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<i64>,
+) -> Response {
+    let result = async {
+        state
+            .attachments
+            .delete_workspace_tree(auth.0.id, id)
+            .await?;
+        state.space.delete_workspace(auth.0.id, id).await
+    }
+    .await;
+    match result {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => ApiError::from(e).into_response(),
+    }
+}
+
 /// GET /api/v1/workspaces/:id/tree
 pub async fn tree(
     State(state): State<AppState>,

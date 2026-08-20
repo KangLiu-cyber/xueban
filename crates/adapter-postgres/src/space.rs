@@ -81,6 +81,16 @@ impl WorkspaceRepository for PgWorkspaceRepository {
         .map_err(map_sqlx_error)?;
         Ok(())
     }
+
+    async fn delete(&self, id: i64, user_id: i64) -> Result<bool> {
+        let result = sqlx::query("delete from workspaces where id = $1 and user_id = $2")
+            .bind(id)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx_error)?;
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 fn workspace_from_row(row: &PgRow) -> Result<Workspace> {

@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -99,6 +100,23 @@ object Api {
         postVoid("/auth/logout")
     }
 
+    /** 会话恢复：校验本地 token 并拉取最新用户信息与活跃时间（无感登录）。 */
+    fun me(): MeResponse = get("/auth/me")
+
+    /** 拉取附件二进制（带 token 鉴权），返回 mime + 字节，供笔记内图片/视频渲染。 */
+    suspend fun fetchAttachment(id: Long): AttachmentData? = withContext(Dispatchers.IO) {
+        val url = BASE_URL + "/attachments/$id"
+        val b = Request.Builder().url(url)
+        authToken?.let { b.header("Authorization", "Bearer $it") }
+        val req = b.get().build()
+        client.newCall(req).execute().use { resp ->
+            if (resp.code in 200..299) {
+                val mime = resp.header("Content-Type") ?: "application/octet-stream"
+                resp.body?.bytes()?.let { AttachmentData(mime, it) }
+            } else null
+        }
+    }
+
     // ---- 空间 ----
 
     fun listWorkspaces(): List<Workspace> = get("/workspaces")
@@ -108,6 +126,10 @@ object Api {
 
     fun updateWorkspace(id: Long, input: WorkspaceInput): Workspace =
         put("/workspaces/$id", input)
+
+    fun deleteWorkspace(id: Long) {
+        deleteVoid("/workspaces/$id")
+    }
 
     fun tree(workspaceId: Long): List<ItemNode> = get("/workspaces/$workspaceId/tree")
 
@@ -156,6 +178,37 @@ object Api {
     fun submitPaper(paperId: Long, request: SubmitRequest): PaperResult =
         post("/papers/$paperId/submit", request)
 
+    // ---- 附件 ----
+
+    /** 上传附件到笔记（raw bytes，服务端魔数嗅探校验），返回附件 id。 */
+    fun uploadAttachment(itemId: Long, filename: String, bytes: ByteArray): Long {
+        val url = BASE_URL + "/items/$itemId/attachments?name=" + java.net.URLEncoder.encode(filename, "UTF-8")
+        val mediaType = "application/octet-stream".toMediaType()
+        val b = Request.Builder().url(url)
+        authToken?.let { b.header("Authorization", "Bearer $it") }
+        val req = b.post(bytes.toRequestBody(mediaType)).build()
+        return runBlocking(Dispatchers.IO) {
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string() ?: ""
+                if (resp.code in 200..299) {
+                    val id = runCatching { json.decodeFromString<JsonObject>(text)["id"]?.toString()?.trim('"') }.getOrNull()
+                    id?.toLongOrNull() ?: throw ApiException(resp.code, "附件上传响应解析失败")
+                } else {
+                    val msg = runCatching {
+                        json.decodeFromString<JsonObject>(text)["error"]?.toString()?.trim('"')
+                    }.getOrNull() ?: text
+                    throw ApiException(resp.code, msg)
+                }
+            }
+        }
+    }
+
+    // ---- 视频作答 ----
+
+    fun videoAnswer(questionId: Long, attachmentIds: List<Long>, note: String?) {
+        exec("POST", "/quiz/video-answer", json.encodeToString(VideoAnswerRequest(questionId, attachmentIds, note)))
+    }
+
     // ---- Agent 凭证 ----
 
     fun credential(): CredentialResponse = get("/agent/credential")
@@ -200,6 +253,19 @@ data class UserDto(
 data class AuthResponse(
     val token: String,
     val user: UserDto,
+)
+
+@Serializable
+data class MeResponse(
+    val user: UserDto,
+    @SerialName("last_used_at") val lastUsedAt: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+)
+
+/** 附件读取结果：mime + 二进制（笔记内图片/视频渲染用，非 @Serializable）。 */
+data class AttachmentData(
+    val mime: String,
+    val bytes: ByteArray,
 )
 
 @Serializable
@@ -277,6 +343,7 @@ enum class QuestionType {
     @SerialName("single") Single,
     @SerialName("multi") Multi,
     @SerialName("judge") Judge,
+    @SerialName("video") Video,
 }
 
 @Serializable
@@ -379,6 +446,13 @@ data class PaperAnswer(
 data class SubmitRequest(
     val answers: List<PaperAnswer>,
     @SerialName("duration_secs") val durationSecs: Int,
+)
+
+@Serializable
+data class VideoAnswerRequest(
+    @SerialName("question_id") val questionId: Long,
+    @SerialName("attachment_ids") val attachmentIds: List<Long>,
+    val note: String? = null,
 )
 
 @Serializable

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 服务端部署包：musl 静态二进制 + skills/ + 前端 web 产物 + deploy/ 编排 + scripts/ 启停脚本，
+# 服务端部署包：musl 静态二进制 + skills/ + 前端 web 产物 + deploy/ 编排（含 nginx.conf）+ scripts/ 启停脚本，
 # 解压即部署源（scripts/start.sh / scripts/stop.sh），
 # 文件名含版本号与 commit。CI（.github/workflows）上传为 Release 资产。
 # 前置：scripts/build-musl.sh（二进制）+ clients/web/dist（trunk build --release）。

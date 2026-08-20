@@ -38,9 +38,13 @@ class AppState(context: Context) {
         }
     var user by mutableStateOf<UserDto?>(null)
     var loggedIn by mutableStateOf(false)
+    /** 启动时正在无感恢复登录（有本地 token，正在校验），用于避免登录页闪现。 */
+    var restoring by mutableStateOf(false)
 
     // ---- 学习空间 ----
     var workspace by mutableStateOf<Workspace?>(null)
+    /** 用户全部备考空间（切换空间入口用，登录/进入空间时刷新）。 */
+    var workspaces by mutableStateOf<List<Workspace>>(emptyList())
     var tree by mutableStateOf<List<ItemNode>>(emptyList())
     var selectedEpId by mutableStateOf<Long?>(null)
     var currentItem by mutableStateOf<ItemBundle?>(null)
@@ -62,6 +66,8 @@ class AppState(context: Context) {
     var quizAnswered by mutableStateOf(false)
     var quizOutcome by mutableStateOf<AnswerOutcome?>(null)
     var quizPicked by mutableStateOf(-1)
+    /** 已提交的视频作答题 id 集合（视频题不判分，提交即完成）。 */
+    var videoSubmitted by mutableStateOf<Set<Long>>(emptySet())
 
     // ---- 错题本 ----
     var wrongList by mutableStateOf<List<WrongListItem>>(emptyList())
@@ -126,6 +132,8 @@ class AppState(context: Context) {
     init {
         Api.authToken = token
         CacheStore.init(context)
+        // 有持久化 token 时启动即进入「无感恢复」态，避免登录页闪现。
+        restoring = token != null
     }
 
     // ==================== 通用 ====================
@@ -153,6 +161,7 @@ class AppState(context: Context) {
         user = null
         loggedIn = false
         workspace = null
+        workspaces = emptyList()
         tree = emptyList()
         currentItem = null
         noteOpen = false
@@ -200,14 +209,43 @@ class AppState(context: Context) {
         val resp = guard("登录失败") { Api.login(account, password) } ?: return false
         token = resp.token
         user = resp.user
+        recordLoginTime()
         return true
+    }
+
+    /**
+     * 无感登录：启动时若有持久化 token，校验并直接进入已绑定空间，无需重新登录。
+     * 凭证失效（401）时 `guard` 已调 resetSession 清 token，回到登录页；
+     * 网络异常时保留 token 下次再试，本次回登录页。
+     */
+    fun restoreSession() {
+        if (token == null) {
+            restoring = false
+            return
+        }
+        val resp = guard("恢复登录失败") { Api.me() }
+        if (resp == null) {
+            restoring = false
+            return
+        }
+        user = resp.user
+        recordLoginTime()
+        enterExistingWorkspace()
+        restoring = false
+    }
+
+    /** 记录最近一次登录/活跃时间（RFC3339 字符串，无感登录 & 记录登录时间用）。 */
+    private fun recordLoginTime() {
+        prefs.edit().putString("last_login_at", java.time.OffsetDateTime.now().toString()).apply()
     }
 
     // ==================== 学习空间 ====================
 
     /** 老用户登录：直接加载已绑定的备考空间并进入主界面（不重填目标、不弹 Agent 引导）。 */
     fun enterExistingWorkspace(): Boolean {
-        val ws = guard("加载空间失败") { Api.listWorkspaces().firstOrNull() } ?: return false
+        val list = guard("加载空间失败") { Api.listWorkspaces() } ?: return false
+        workspaces = list
+        val ws = list.firstOrNull() ?: return false
         enterWorkspace(ws, fresh = false)
         return true
     }
@@ -226,6 +264,8 @@ class AppState(context: Context) {
             }
         } ?: return
         enterWorkspace(ws, fresh = true)
+        // 首次创建后只有一个空间，同步到切换列表
+        workspaces = listOf(ws)
     }
 
     private fun enterWorkspace(ws: Workspace, fresh: Boolean) {
@@ -238,6 +278,69 @@ class AppState(context: Context) {
         restoreMock()
         loggedIn = true
         freshEnter = fresh
+    }
+
+    /** 刷新用户空间列表（切换空间入口展示用）。 */
+    fun loadWorkspaces() {
+        val list = guard("加载空间失败") { Api.listWorkspaces() }
+        if (list != null) workspaces = list
+    }
+
+    /** 切换备考空间：重置当前空间相关状态，加载新空间的内容树 / 题库 / 错题。 */
+    fun switchWorkspace(ws: Workspace) {
+        if (ws.id == workspace?.id) {
+            goalSheet = false
+            return
+        }
+        workspace = ws
+        examGoal = ws.examGoal
+        examDate = ws.examDate ?: ""
+        // 重置与旧空间绑定的视图状态，避免串空间显示
+        currentItem = null
+        noteOpen = false
+        annoMode = false
+        annoDetail = null
+        selectedEpId = null
+        quizScope = "全部范围"
+        quizScopeId = null
+        quizPool = emptyList()
+        quizIdx = 0
+        quizRight = 0
+        quizWrong = 0
+        quizAnswered = false
+        quizOutcome = null
+        quizPicked = -1
+        wrongList = emptyList()
+        redoIdx = -1
+        previewPaper = null
+        mockPaper = null
+        mockAnswers = emptyMap()
+        mockResult = null
+        goalSheet = false
+        loadTree()
+        loadWrong()
+        toast("已切换到「${ws.name}」")
+    }
+
+    /** 删除备考空间：删除后刷新列表；删的是当前空间则切到剩余第一个，无剩余则回登录。 */
+    fun deleteWorkspace(ws: Workspace) {
+        guard("删除失败") { Api.deleteWorkspace(ws.id) } ?: return
+        toast("已删除「${ws.name}」")
+        val remaining = guard("加载空间失败") { Api.listWorkspaces() } ?: emptyList()
+        workspaces = remaining
+        if (ws.id == workspace?.id) {
+            val next = remaining.firstOrNull()
+            if (next != null) {
+                switchWorkspace(next)
+            } else {
+                workspace = null
+                workspaces = emptyList()
+                loggedIn = false
+                goalSheet = false
+                currentItem = null
+                noteOpen = false
+            }
+        }
     }
 
     fun loadTree() {
@@ -415,6 +518,24 @@ class AppState(context: Context) {
             quizAnswered = false
             quizOutcome = null
             quizPicked = -1
+        }
+    }
+
+    /** 视频题作答：上传训练视频附件到题源笔记下 + 训练想法，不判分，提交待 AI 复盘。 */
+    fun submitVideo(questionId: Long, sourceItemId: Long, files: List<Pair<String, ByteArray>>, note: String?) {
+        val ids = files.mapNotNull { (name, bytes) ->
+            guard("上传失败") { Api.uploadAttachment(sourceItemId, name, bytes) }
+        }
+        if (ids.isEmpty()) {
+            toast("上传失败，请重试")
+            return
+        }
+        val ok = guard("提交失败") {
+            Api.videoAnswer(questionId, ids, note?.takeIf { it.isNotBlank() })
+        } != null
+        if (ok) {
+            videoSubmitted = videoSubmitted + questionId
+            toast("已提交，AI 复盘后会生成复盘笔记")
         }
     }
 

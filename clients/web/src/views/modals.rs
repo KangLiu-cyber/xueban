@@ -1,6 +1,8 @@
 //! 全局弹窗层：确认 / 试卷预览 / 错题重做 / 模考结果 / 考试目标设置 / Agent 接入 /
 //! 批注编辑 / 批注详情 / 批注悬浮按钮 / Toast。由 Shell 挂载一次，随状态信号开合。
 
+use std::sync::Arc;
+
 use chrono::{NaiveDate, Utc};
 use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
@@ -9,7 +11,7 @@ use wasm_bindgen::prelude::{Closure, JsValue};
 use wasm_bindgen::JsCast;
 
 use crate::api::{self, QuestionType, Workspace, WorkspaceInput};
-use crate::state::{episode_map, fmt_date_ymd, fmt_duration, AppState, View};
+use crate::state::{episode_map, fmt_date_ymd, fmt_duration, AppState, ConfirmSpec, View};
 use crate::views::assembly::{
     ask_start_mock, cart_stats, q_source, q_subject, wrong_times, TARGET,
 };
@@ -223,6 +225,38 @@ pub fn Modals(state: AppState) -> impl IntoView {
             init_data(st).await;
         });
     };
+    // ---- 删除备考空间 ----
+    let delete_workspace = move |ws: Workspace| {
+        let st = state;
+        let name = ws.name.clone();
+        let id = ws.id;
+        let is_cur = st.workspace.get_untracked().map(|w| w.id) == Some(id);
+        st.confirm.set(Some(ConfirmSpec {
+            title: "删除备考空间".to_string(),
+            text_html: format!(
+                "确定删除「{}」吗？<br>空间下的目录、笔记、习题、错题、附件会一并删除，且不可恢复。",
+                name
+            ),
+            ok_label: "删除".to_string(),
+            on_ok: Arc::new(move || {
+                let st = st;
+                spawn_local(async move {
+                    match api::delete_workspace(id).await {
+                        Ok(()) => {
+                            st.toast("已删除备考空间");
+                            if is_cur {
+                                crate::state::ls_remove(crate::state::LS_WORKSPACE);
+                                st.workspace.set(None);
+                                st.episode.set(None);
+                            }
+                            init_data(st).await;
+                        }
+                        Err(e) => st.toast(&format!("删除失败：{}", e)),
+                    }
+                });
+            }),
+        }));
+    };
     let ws_rows = move || {
         let cur_id = state.workspace.get().map(|w| w.id);
         let mut rows: Vec<AnyView> = state
@@ -232,6 +266,7 @@ pub fn Modals(state: AppState) -> impl IntoView {
             .map(|ws| {
                 let is_cur = cur_id == Some(ws.id);
                 let st = state;
+                let ws_del = ws.clone();
                 (view! {
                     <div class="ws-row" class:active=is_cur
                         on:click=move |_| {
@@ -255,6 +290,13 @@ pub fn Modals(state: AppState) -> impl IntoView {
                                 }
                             }}
                         </span>
+                        <button class="ws-row-del" title="删除空间"
+                            on:click=move |ev| {
+                                ev.stop_propagation();
+                                delete_workspace(ws_del.clone());
+                            }>
+                            "🗑"
+                        </button>
                     </div>
                 })
                 .into_any()

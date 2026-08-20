@@ -10,8 +10,8 @@ use chrono::Utc;
 use domain::error::{Error, Result};
 use domain::event::{Event, EventAction};
 use domain::ports::{
-    EventStore, ItemRepository, QuestionRepository, QuizRecordRepository, WorkspaceRepository,
-    WrongItemRepository,
+    AttachmentRepository, EventStore, ItemRepository, QuestionRepository, QuizRecordRepository,
+    WorkspaceRepository, WrongItemRepository,
 };
 use domain::practice::{Answer, Chosen, Question, QuestionType, QuizRecord};
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,7 @@ pub struct AnswerOutcome {
     pub explanation: Option<String>,
 }
 
-pub struct QuizService<W, I, Q, R, B, E>
+pub struct QuizService<W, I, Q, R, B, E, A>
 where
     W: WorkspaceRepository + ?Sized,
     I: ItemRepository + ?Sized,
@@ -54,6 +54,7 @@ where
     R: QuizRecordRepository + ?Sized,
     B: WrongItemRepository + ?Sized,
     E: EventStore + ?Sized,
+    A: AttachmentRepository + ?Sized,
 {
     workspaces: Arc<W>,
     items: Arc<I>,
@@ -61,9 +62,10 @@ where
     records: Arc<R>,
     wrongs: Arc<B>,
     events: Arc<E>,
+    attachments: Arc<A>,
 }
 
-impl<W, I, Q, R, B, E> QuizService<W, I, Q, R, B, E>
+impl<W, I, Q, R, B, E, A> QuizService<W, I, Q, R, B, E, A>
 where
     W: WorkspaceRepository + ?Sized,
     I: ItemRepository + ?Sized,
@@ -71,7 +73,9 @@ where
     R: QuizRecordRepository + ?Sized,
     B: WrongItemRepository + ?Sized,
     E: EventStore + ?Sized,
+    A: AttachmentRepository + ?Sized,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         workspaces: Arc<W>,
         items: Arc<I>,
@@ -79,6 +83,7 @@ where
         records: Arc<R>,
         wrongs: Arc<B>,
         events: Arc<E>,
+        attachments: Arc<A>,
     ) -> Self {
         Self {
             workspaces,
@@ -87,6 +92,7 @@ where
             records,
             wrongs,
             events,
+            attachments,
         }
     }
 
@@ -202,6 +208,62 @@ where
             explanation: question.explanation,
         })
     }
+
+    /// SubmitVideoAnswer：视频题作答——用户上传训练视频（附件）与训练想法，
+    /// 不判对错、不进错题本，仅校验归属与题型后落 `video_submit` 事件，
+    /// 供复盘 Agent 经 get_events 读取（附件 id + 训练想法 + 题源）。
+    pub async fn submit_video(
+        &self,
+        user_id: i64,
+        question_id: i64,
+        attachment_ids: Vec<i64>,
+        note: Option<String>,
+    ) -> Result<()> {
+        let question = self
+            .questions
+            .find_by_ids(&[question_id], user_id)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::NotFound("题目不存在".to_owned()))?;
+        self.workspaces
+            .find_by_id_and_user(question.workspace_id, user_id)
+            .await?
+            .ok_or_else(|| Error::NotFound("题目不存在".to_owned()))?;
+        if question.qtype != QuestionType::Video {
+            return Err(Error::Invalid("该题不是视频作答题".to_owned()));
+        }
+        if attachment_ids.is_empty() {
+            return Err(Error::Invalid("请先上传训练视频".to_owned()));
+        }
+        // 附件归属校验：每个附件都必须属于当前用户（SQL join 防线 + 显式未命中 → NotFound）。
+        for id in &attachment_ids {
+            self.attachments
+                .find_by_id(*id, user_id)
+                .await?
+                .ok_or_else(|| Error::NotFound("训练视频附件不存在".to_owned()))?;
+        }
+        let now = Utc::now();
+        self.events
+            .append(&Event {
+                id: 0,
+                user_id,
+                workspace_id: Some(question.workspace_id),
+                item_id: Some(question.source_item_id),
+                action: EventAction::VideoSubmit,
+                payload: Some(
+                    serde_json::json!({
+                        "question_id": question_id,
+                        "attachment_ids": attachment_ids,
+                        "note": note,
+                    })
+                    .to_string(),
+                ),
+                created_at: now,
+            })
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -210,10 +272,11 @@ mod tests {
 
     use super::*;
     use crate::inmem::{
-        InMemoryEventStore, InMemoryItemRepository, InMemoryQuestionRepository,
-        InMemoryQuizRecordRepository, InMemoryWorkspaceRepository, InMemoryWrongItemRepository,
+        InMemoryAttachmentRepository, InMemoryEventStore, InMemoryItemRepository,
+        InMemoryQuestionRepository, InMemoryQuizRecordRepository, InMemoryWorkspaceRepository,
+        InMemoryWrongItemRepository,
     };
-    use domain::space::{ItemKind, Workspace};
+    use domain::space::{Attachment, ItemKind, Workspace};
 
     fn workspace(user_id: i64) -> Workspace {
         Workspace {
@@ -234,6 +297,7 @@ mod tests {
             InMemoryQuizRecordRepository,
             InMemoryWrongItemRepository,
             InMemoryEventStore,
+            InMemoryAttachmentRepository,
         >,
         ws_id: i64,
         item_id: i64,
@@ -242,7 +306,8 @@ mod tests {
 
     async fn ctx(user_id: i64) -> Ctx {
         let ws_repo = Arc::new(InMemoryWorkspaceRepository::default());
-        let item_repo = Arc::new(InMemoryItemRepository::default());
+        // item 注入 workspace 注册表（归属过滤），附件注入同一 item 仓储（附件归属校验）。
+        let item_repo = Arc::new(InMemoryItemRepository::with_workspaces(ws_repo.clone()));
         let q_repo = Arc::new(InMemoryQuestionRepository::default());
         let ws = ws_repo.insert(&workspace(user_id)).await.unwrap();
         let item = crate::inmem::insert_item(&item_repo, ws, "第1集", ItemKind::Dir).await;
@@ -273,11 +338,12 @@ mod tests {
         let ids = q_repo.insert_many(&questions).await.unwrap();
         let svc = QuizService::new(
             ws_repo,
-            item_repo,
+            item_repo.clone(),
             q_repo,
             Arc::new(InMemoryQuizRecordRepository::default()),
             Arc::new(InMemoryWrongItemRepository::default()),
             Arc::new(InMemoryEventStore::default()),
+            Arc::new(InMemoryAttachmentRepository::with_items(item_repo)),
         );
         Ctx {
             svc,
@@ -396,6 +462,115 @@ mod tests {
         assert!(matches!(
             c.svc.submit(1, c.q_ids[1], Chosen::Single(0), None).await,
             Err(Error::Invalid(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn submit_video_appends_event_without_judging() {
+        let c = ctx(1).await;
+        // 挂一条视频题（Video 题型，无标准答案）。
+        let vid = c
+            .svc
+            .questions
+            .insert_many(&[Question {
+                id: 0,
+                workspace_id: c.ws_id,
+                source_item_id: c.item_id,
+                qtype: QuestionType::Video,
+                stem: "上传正手高远球动作视频".into(),
+                options: vec![],
+                answer: Answer::Video,
+                explanation: None,
+                created_at: Utc::now(),
+            }])
+            .await
+            .unwrap()[0];
+        // 一个属于该用户的附件（挂在题目所属 item 下）。
+        let att = Attachment {
+            id: 0,
+            item_id: c.item_id,
+            filename: "训练.mp4".into(),
+            mime: "video/mp4".into(),
+            size_bytes: 1024,
+            uuid: "u".into(),
+            created_at: Utc::now(),
+        };
+        let att_id = c.svc.attachments.insert(&att).await.unwrap();
+
+        c.svc
+            .submit_video(1, vid, vec![att_id], Some("发力用不上腰".into()))
+            .await
+            .unwrap();
+
+        // 落 video_submit 事件，payload 携带附件 id 与训练想法。
+        let events = c.svc.events.list_by_user(1, 10).await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, EventAction::VideoSubmit);
+        assert_eq!(events[0].item_id, Some(c.item_id));
+        let payload: serde_json::Value =
+            serde_json::from_str(events[0].payload.as_deref().unwrap()).unwrap();
+        assert_eq!(payload["question_id"], vid);
+        assert_eq!(payload["attachment_ids"], serde_json::json!([att_id]));
+        assert_eq!(payload["note"], "发力用不上腰");
+        // 视频题不判分、不进错题本：无 answer 事件、无错题。
+        assert!(c.svc.wrongs.find(1, vid).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn submit_video_rejects_wrong_type_empty_foreign_attachment() {
+        let c = ctx(1).await;
+        let att = Attachment {
+            id: 0,
+            item_id: c.item_id,
+            filename: "a.mp4".into(),
+            mime: "video/mp4".into(),
+            size_bytes: 1,
+            uuid: "u".into(),
+            created_at: Utc::now(),
+        };
+        let att_id = c.svc.attachments.insert(&att).await.unwrap();
+        // 非视频题（single）→ Invalid。
+        assert!(matches!(
+            c.svc.submit_video(1, c.q_ids[0], vec![att_id], None).await,
+            Err(Error::Invalid(_))
+        ));
+        let vid = c
+            .svc
+            .questions
+            .insert_many(&[Question {
+                id: 0,
+                workspace_id: c.ws_id,
+                source_item_id: c.item_id,
+                qtype: QuestionType::Video,
+                stem: "上传视频".into(),
+                options: vec![],
+                answer: Answer::Video,
+                explanation: None,
+                created_at: Utc::now(),
+            }])
+            .await
+            .unwrap()[0];
+        // 空附件列表 → Invalid。
+        assert!(matches!(
+            c.svc.submit_video(1, vid, vec![], None).await,
+            Err(Error::Invalid(_))
+        ));
+        // 他人附件 → NotFound（附件归属校验，附件挂在用户 2 的 item 下）。
+        let ws2 = c.svc.workspaces.insert(&workspace(2)).await.unwrap();
+        let item2 = crate::inmem::insert_item(&c.svc.items, ws2, "别人集", ItemKind::Dir).await;
+        let foreign = Attachment {
+            id: 0,
+            item_id: item2,
+            filename: "b.mp4".into(),
+            mime: "video/mp4".into(),
+            size_bytes: 1,
+            uuid: "v".into(),
+            created_at: Utc::now(),
+        };
+        let foreign_id = c.svc.attachments.insert(&foreign).await.unwrap();
+        assert!(matches!(
+            c.svc.submit_video(1, vid, vec![foreign_id], None).await,
+            Err(Error::NotFound(_))
         ));
     }
 }

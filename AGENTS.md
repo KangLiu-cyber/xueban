@@ -18,6 +18,9 @@
 | `docs/architecture.md` | 架构文档 v1.1，§5.4 工程结构为权威目录定义 |
 | `docs/ui-mockup/desktop-prototype-v3-soft.html` | 桌面端 v3 柔和版原型（已定稿） |
 | `docs/ui-mockup/android-prototype-v1.html` | 安卓端原型 v1（已定稿） |
+| `docs/system-intro.md` | 系统介绍（面向决策者，突出展示产品定位与亮点） |
+| `docs/sports-education.md` | 体育教育方向方案（系统思维 + 能力增量 + 落地路径） |
+| `docs/sports-features.md` | 体育版最小闭环功能描述（通俗语言，面向老板/合作方讲解） |
 
 ## 工程结构
 

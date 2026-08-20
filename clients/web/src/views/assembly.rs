@@ -70,6 +70,7 @@ fn passes(
             QuestionType::Single => "单选",
             QuestionType::Multi => "多选",
             QuestionType::Judge => "判断",
+            QuestionType::Video => "视频作答",
         };
         if !types.contains(t) {
             return false;

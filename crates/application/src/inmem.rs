@@ -132,6 +132,28 @@ impl TokenRepository for InMemoryTokenRepository {
             .max_by_key(|t| t.id)
             .cloned())
     }
+
+    async fn touch(
+        &self,
+        token: &str,
+        last_used_at: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> domain::Result<()> {
+        if let Some(t) = self
+            .tokens
+            .lock()
+            .unwrap()
+            .values_mut()
+            .find(|t| t.token == token)
+        {
+            // 对齐 Pg：仅对已设置过期时间的 token 滑动续期（agent/存量不过期）。
+            if t.expires_at.is_some() {
+                t.last_used_at = Some(last_used_at);
+                t.expires_at = Some(expires_at);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -180,6 +202,15 @@ impl WorkspaceRepository for InMemoryWorkspaceRepository {
     async fn update(&self, ws: &Workspace) -> domain::Result<()> {
         self.workspaces.lock().unwrap().insert(ws.id, ws.clone());
         Ok(())
+    }
+
+    async fn delete(&self, id: i64, user_id: i64) -> domain::Result<bool> {
+        let mut map = self.workspaces.lock().unwrap();
+        let hit = map.get(&id).map(|w| w.user_id == user_id).unwrap_or(false);
+        if hit {
+            map.remove(&id);
+        }
+        Ok(hit)
     }
 }
 
@@ -826,6 +857,35 @@ impl AttachmentRepository for InMemoryAttachmentRepository {
             .unwrap()
             .values()
             .filter(|a| ids.contains(&a.item_id))
+            .cloned()
+            .collect();
+        list.sort_by_key(|a| a.id);
+        Ok(list)
+    }
+
+    async fn list_by_workspace(
+        &self,
+        workspace_id: i64,
+        _user_id: i64,
+    ) -> domain::Result<Vec<Attachment>> {
+        // 归属校验由应用层 require_workspace 完成（与 Pg 实现 SQL join 的防线等价）。
+        let item_ids: std::collections::HashSet<i64> = match &self.items {
+            Some(items) => items
+                .items
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|i| i.workspace_id == workspace_id)
+                .map(|i| i.id)
+                .collect(),
+            None => std::collections::HashSet::new(),
+        };
+        let mut list: Vec<Attachment> = self
+            .attachments
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|a| item_ids.contains(&a.item_id))
             .cloned()
             .collect();
         list.sort_by_key(|a| a.id);

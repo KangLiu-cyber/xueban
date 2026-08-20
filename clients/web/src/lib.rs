@@ -15,6 +15,10 @@ fn Root() -> impl IntoView {
         state.toast("登录已失效，请重新登录");
     });
     provide_context(state);
+    // 无感登录：启动时用本地 token 校验并刷新会话（失败按 unauthorized 回调清理）。
+    leptos::task::spawn_local(async move {
+        state.restore_session().await;
+    });
     view! {
         <Show
             when=move || state.entered.get()

@@ -16,6 +16,8 @@ use crate::api::{
 
 pub const LS_TOKEN: &str = "xb_token";
 pub const LS_USER: &str = "xb_user";
+/// 最近一次登录/活跃时间（无感登录 & 记录登录时间用）。
+pub const LS_LOGIN_AT: &str = "xb_login_at";
 pub const LS_WORKSPACE: &str = "xb_workspace";
 pub const LS_STARS: &str = "xb_stars";
 pub const LS_LEARNED: &str = "xb_learned";
@@ -218,6 +220,8 @@ pub struct AppState {
     pub entered: RwSignal<bool>,
     pub token: RwSignal<Option<String>>,
     pub user: RwSignal<Option<UserDto>>,
+    /// 最近一次登录/活跃时间（RFC3339 字符串，持久化到 localStorage）。
+    pub login_at: RwSignal<Option<String>>,
     pub workspaces: RwSignal<Vec<Workspace>>,
     pub workspace: RwSignal<Option<Workspace>>,
     pub tree: RwSignal<Vec<ItemNode>>,
@@ -252,6 +256,8 @@ pub struct AppState {
     pub quiz_idx: RwSignal<usize>,
     pub quiz_correct_cnt: RwSignal<u32>,
     pub quiz_wrong_cnt: RwSignal<u32>,
+    /// 已提交的视频作答题 id 集合（视频题不判分，提交即完成，供下一题/回看标记）。
+    pub video_submitted: RwSignal<HashSet<i64>>,
     pub wrong_list: RwSignal<Vec<WrongListItem>>,
     pub wrong_stats: RwSignal<Option<WrongStats>>,
     pub wrong_filter: RwSignal<WrongFilter>,
@@ -297,6 +303,7 @@ impl AppState {
         let token = ls_get(LS_TOKEN);
         crate::api::set_auth_token(token.clone());
         let user = ls_get(LS_USER).and_then(|s| serde_json::from_str::<UserDto>(&s).ok());
+        let login_at = ls_get(LS_LOGIN_AT);
         let workspace =
             ls_get(LS_WORKSPACE).and_then(|s| serde_json::from_str::<Workspace>(&s).ok());
         let stars = ls_get(LS_STARS)
@@ -315,6 +322,7 @@ impl AppState {
             entered: RwSignal::new(ls_get(LS_TOKEN).is_some()),
             token: RwSignal::new(token),
             user: RwSignal::new(user),
+            login_at: RwSignal::new(login_at),
             workspaces: RwSignal::new(Vec::new()),
             workspace: RwSignal::new(workspace),
             tree: RwSignal::new(Vec::new()),
@@ -349,6 +357,7 @@ impl AppState {
             quiz_idx: RwSignal::new(0),
             quiz_correct_cnt: RwSignal::new(0),
             quiz_wrong_cnt: RwSignal::new(0),
+            video_submitted: RwSignal::new(HashSet::new()),
             wrong_list: RwSignal::new(Vec::new()),
             wrong_stats: RwSignal::new(None),
             wrong_filter: RwSignal::new(WrongFilter::All),
@@ -369,6 +378,9 @@ impl AppState {
     pub fn persist_creds(&self, token: &str, user: &UserDto) {
         ls_set(LS_TOKEN, token);
         ls_set(LS_USER, &serde_json::to_string(user).unwrap_or_default());
+        let now = Utc::now().to_rfc3339();
+        ls_set(LS_LOGIN_AT, &now);
+        self.login_at.set(Some(now));
         crate::api::set_auth_token(Some(token.to_string()));
         self.token.set(Some(token.to_string()));
     }
@@ -378,14 +390,42 @@ impl AppState {
         self.user.set(Some(user.clone()));
     }
 
+    /// 无感登录：启动时用本地 token 调 /auth/me 校验并刷新用户与活跃时间。
+    /// 校验通过更新 user / login_at；凭证失效（401）清除登录态；网络/服务端
+    /// 异常保持乐观已进入态，不打断离线使用。
+    pub async fn restore_session(&self) {
+        if self.token.get_untracked().is_none() {
+            return;
+        }
+        match crate::api::me().await {
+            Ok(resp) => {
+                let u = resp.user;
+                ls_set(LS_USER, &serde_json::to_string(&u).unwrap_or_default());
+                self.user.set(Some(u));
+                if let Some(ts) = resp.last_used_at {
+                    let s = ts.to_rfc3339();
+                    ls_set(LS_LOGIN_AT, &s);
+                    self.login_at.set(Some(s));
+                }
+            }
+            Err(crate::api::ApiError::Http(401, _)) => {
+                self.clear_auth();
+                self.toast("登录已失效，请重新登录");
+            }
+            Err(_) => {}
+        }
+    }
+
     pub fn clear_auth(&self) {
         ls_remove(LS_TOKEN);
         ls_remove(LS_USER);
+        ls_remove(LS_LOGIN_AT);
         ls_remove(LS_WORKSPACE);
         crate::api::set_auth_token(None);
         self.entered.set(false);
         self.token.set(None);
         self.user.set(None);
+        self.login_at.set(None);
         self.workspace.set(None);
         self.workspaces.set(Vec::new());
         self.tree.set(Vec::new());

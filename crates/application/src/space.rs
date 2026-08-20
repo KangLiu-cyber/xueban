@@ -92,6 +92,17 @@ where
         self.workspaces.list_by_user(user_id).await
     }
 
+    /// 删除空间（先做归属校验，未命中报 NotFound；级联由存储层承担）。
+    pub async fn delete_workspace(&self, user_id: i64, id: i64) -> Result<()> {
+        self.require_workspace(id, user_id).await?;
+        let hit = self.workspaces.delete(id, user_id).await?;
+        if hit {
+            Ok(())
+        } else {
+            Err(Error::NotFound("备考空间不存在".to_owned()))
+        }
+    }
+
     /// 空间归属校验：不存在或不属于该用户时报 NotFound。
     pub async fn require_workspace(&self, id: i64, user_id: i64) -> Result<Workspace> {
         self.workspaces

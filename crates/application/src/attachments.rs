@@ -21,7 +21,8 @@ use uuid::Uuid;
 pub const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
 
 /// 魔数嗅探白名单：存库 mime 的权威来源，防伪造 Content-Type。
-/// 明确拒绝 svg（可携带脚本，XSS 面）。返回 `None` 表示非白名单图片。
+/// 明确拒绝 svg（可携带脚本，XSS 面）。返回 `None` 表示非白名单附件。
+/// 图片（png/jpeg/gif/webp，gif/webp 可为动图）+ 视频（mp4/webm）。
 pub fn sniff_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
         Some("image/png")
@@ -31,6 +32,12 @@ pub fn sniff_mime(bytes: &[u8]) -> Option<&'static str> {
         Some("image/gif")
     } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
         Some("image/webp")
+    } else if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        // ISO BMFF：mp4 / mov 共用 ftyp 盒子。
+        Some("video/mp4")
+    } else if bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        // Matroska / WebM（EBML 头）。
+        Some("video/webm")
     } else {
         None
     }
@@ -42,7 +49,9 @@ fn ext_for_mime(mime: &str) -> &'static str {
         "image/jpeg" => "jpg",
         "image/gif" => "gif",
         "image/webp" => "webp",
-        _ => "img",
+        "video/mp4" => "mp4",
+        "video/webm" => "webm",
+        _ => "bin",
     }
 }
 
@@ -86,11 +95,12 @@ where
         if !item.is_note() {
             return Err(Error::Invalid("附件只能挂在笔记上".to_owned()));
         }
-        let mime = sniff_mime(bytes)
-            .ok_or_else(|| Error::Invalid("不支持的图片格式（仅 png/jpeg/gif/webp）".to_owned()))?;
+        let mime = sniff_mime(bytes).ok_or_else(|| {
+            Error::Invalid("不支持的附件格式（仅 png/jpeg/gif/webp/mp4/webm）".to_owned())
+        })?;
         // 未提供文件名时按嗅探 mime 给默认（仅展示用，存储键是 uuid）。
         let filename = if filename.trim().is_empty() {
-            format!("image.{}", ext_for_mime(mime))
+            format!("attachment.{}", ext_for_mime(mime))
         } else {
             filename
         };
@@ -147,6 +157,19 @@ where
         Ok(atts.len())
     }
 
+    /// 删除空间前的附件清理：收集空间下全部附件并删磁盘文件，返回清理的文件数。
+    /// 表行不动——空间删除后由 DB 级联兜底删除（attachments.item_id → items → workspace）。
+    pub async fn delete_workspace_tree(&self, user_id: i64, workspace_id: i64) -> Result<usize> {
+        let atts = self
+            .attachments
+            .list_by_workspace(workspace_id, user_id)
+            .await?;
+        for a in &atts {
+            self.storage.delete(user_id, &a.uuid).await?;
+        }
+        Ok(atts.len())
+    }
+
     /// 归属校验：item 属于 user（仓储 SQL join 防线 + 显式未命中 → NotFound）。
     async fn require_item(&self, user_id: i64, item_id: i64) -> Result<Item> {
         self.items
@@ -180,6 +203,8 @@ mod tests {
     const JPEG: &[u8] = &[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
     const GIF: &[u8] = b"GIF89a\x01\x00\x01\x00";
     const WEBP: &[u8] = b"RIFF\x00\x00\x00\x00WEBPVP8 ";
+    const MP4: &[u8] = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom";
+    const WEBM: &[u8] = &[0x1A, 0x45, 0xDF, 0xA3, 0x01, 0x02, 0x03, 0x04];
     const SVG: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>";
 
     type Svc = (
@@ -213,6 +238,8 @@ mod tests {
         assert_eq!(sniff_mime(JPEG), Some("image/jpeg"));
         assert_eq!(sniff_mime(GIF), Some("image/gif"));
         assert_eq!(sniff_mime(WEBP), Some("image/webp"));
+        assert_eq!(sniff_mime(MP4), Some("video/mp4"));
+        assert_eq!(sniff_mime(WEBM), Some("video/webm"));
         assert_eq!(sniff_mime(SVG), None);
         assert_eq!(sniff_mime(b""), None);
         assert_eq!(sniff_mime(b"not an image"), None);

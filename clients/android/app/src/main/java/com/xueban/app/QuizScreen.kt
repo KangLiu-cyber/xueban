@@ -1,5 +1,7 @@
 package com.xueban.app
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,9 +30,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -140,6 +145,12 @@ private fun QuizCard(state: AppState, q: QuestionBrief, onOpenGoal: () -> Unit) 
     val outcome = state.quizOutcome
     val corrects = if (outcome != null) correctIndexSet(q, outcome) else emptySet()
 
+    // 视频题：独立作答卡片（上传视频 + 训练想法，不判分）。
+    if (q.qtype == QuestionType.Video) {
+        VideoAnswerCard(state, q)
+        return
+    }
+
     XbCard {
         androidx.compose.foundation.layout.Column(Modifier.padding(16.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -222,6 +233,132 @@ private fun QuizCard(state: AppState, q: QuestionBrief, onOpenGoal: () -> Unit) 
             }
         }
     }
+}
+
+/** 视频作答题卡片：上传训练视频/图片 + 训练想法，不判分，提交待 AI 复盘。 */
+@Composable
+private fun VideoAnswerCard(state: AppState, q: QuestionBrief) {
+    val context = LocalContext.current
+    var files by remember(q.id) { mutableStateOf<List<Pair<String, ByteArray>>>(emptyList()) }
+    var note by remember(q.id) { mutableStateOf("") }
+    var uploading by remember(q.id) { mutableStateOf(false) }
+    val submitted = q.id in state.videoSubmitted
+
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        uploading = true
+        val picked = uris.mapNotNull { uri ->
+            runCatching {
+                val name = queryDisplayName(context, uri) ?: "训练视频"
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null) null else name to bytes
+            }.getOrNull()
+        }
+        files = files + picked
+        uploading = false
+    }
+
+    XbCard {
+        Column(Modifier.padding(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Badge("视频作答", Xb.accentLight, Xb.accentDeep)
+                Badge("不判对错 · 交给 AI 复盘", Xb.surface2, Xb.muted)
+            }
+            Text(
+                q.stem,
+                color = Xb.ink, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
+                modifier = Modifier.padding(top = 11.dp, bottom = 13.dp),
+            )
+            if (submitted) {
+                Text(
+                    "✓ 已提交 · 等待 AI 复盘",
+                    color = Xb.green, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Xb.greenLight)
+                        .padding(horizontal = 13.dp, vertical = 9.dp),
+                )
+            } else {
+                XbButton(
+                    if (uploading) "读取中…" else "🎬 选择视频 / 图片",
+                    onClick = { launcher.launch(arrayOf("video/*", "image/*")) },
+                    modifier = Modifier.fillMaxWidth(),
+                    primary = false,
+                    enabled = !uploading,
+                )
+                files.forEach { (name, bytes) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 9.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Xb.surface2)
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "$name · ${bytes.size / 1024}KB",
+                            color = Xb.muted, fontSize = 12.5.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "✕",
+                            color = Xb.mutedLight, fontSize = 13.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { files = files - (name to bytes) }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                Text(
+                    "训练想法（可选 · 让 AI 更懂你的问题）",
+                    color = Xb.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp),
+                )
+                androidx.compose.foundation.text.BasicTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.5.sp, color = Xb.ink),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Xb.surface2)
+                        .padding(horizontal = 13.dp, vertical = 11.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (note.isEmpty()) {
+                                Text("如：发力总用不上腰，重心前冲…", color = Xb.mutedLight, fontSize = 13.5.sp)
+                            }
+                            inner()
+                        }
+                    },
+                )
+                XbButton(
+                    "提交给 AI 复盘",
+                    onClick = {
+                        if (files.isEmpty()) {
+                            state.toast("请先选择训练视频或图片")
+                            return@XbButton
+                        }
+                        state.submitVideo(q.id, q.sourceItemId, files, note)
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 13.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun queryDisplayName(context: android.content.Context, uri: android.net.Uri): String? {
+    return runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()
 }
 
 /** 选择刷题范围弹层：搜索 + 课程分组 + 每集题数。 */

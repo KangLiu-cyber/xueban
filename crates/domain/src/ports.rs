@@ -48,6 +48,14 @@ pub trait TokenRepository {
         purpose: TokenPurpose,
         now: DateTime<Utc>,
     ) -> Result<()>;
+    /// 滑动续期：更新最近活跃时间与过期时间。实现侧按「该 token 已设置
+    /// 过期时间」过滤（agent / 存量 token 无过期时间，不更新）。
+    async fn touch(
+        &self,
+        token: &str,
+        last_used_at: DateTime<Utc>,
+        expires_at: DateTime<Utc>,
+    ) -> Result<()>;
 }
 
 #[async_trait]
@@ -60,6 +68,9 @@ pub trait WorkspaceRepository {
     async fn list_by_user(&self, user_id: i64) -> Result<Vec<Workspace>>;
     /// 更新空间信息（ManageExamGoal）。
     async fn update(&self, ws: &Workspace) -> Result<()>;
+    /// 删除空间（须带归属校验：space 属于 user）。级联行为（items 子树 /
+    /// 习题 / 组卷 / 附件行）由存储实现承担（SQL ON DELETE CASCADE 或等价模拟）。
+    async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
 }
 
 #[async_trait]
@@ -113,6 +124,9 @@ pub trait AttachmentRepository {
     /// 列出一棵 item 子树（含自身）的全部附件——删除笔记前收集磁盘文件用。
     /// 携带归属：子树内全部节点属于 user（SQL 层 join 限定）。
     async fn list_by_item_tree(&self, item_id: i64, user_id: i64) -> Result<Vec<Attachment>>;
+    /// 列出某空间下全部附件——删除空间前收集磁盘文件用。
+    /// 携带归属：空间属于 user（SQL 层 join 限定）。
+    async fn list_by_workspace(&self, workspace_id: i64, user_id: i64) -> Result<Vec<Attachment>>;
     /// 删除单个附件（须带归属校验），未命中返回 false。
     async fn delete(&self, id: i64, user_id: i64) -> Result<bool>;
     /// 按 id 批量删除附件行（不校验归属——由调用方先经子树收集校验；

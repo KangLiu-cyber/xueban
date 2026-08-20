@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# 一键启动部署（docker compose：postgres + server）。
+# 一键启动部署（docker compose：postgres + server + nginx）。
 # 前置产物缺失时自动补齐：musl 二进制（scripts/build-musl.sh）与前端 web 产物
 # （cd clients/web && trunk build --release）；部署包解压后两者已在包内，直接启动。
+# 前端 web 产物由 nginx 托管并反代 /api/v1、/mcp 到 server（见 deploy/nginx.conf）。
 # 生产注意：先设 POSTGRES_PASSWORD（或 deploy/.env），默认是 compose 里的开发口令。
 # 用法：scripts/start.sh
 set -euo pipefail
@@ -44,4 +45,4 @@ if [ -n "$cid" ]; then
   fi
 fi
 
-echo "[start] 已就绪：http://127.0.0.1:8080（MCP 端点见 MCP_ENDPOINT，默认 http://127.0.0.1:8080/mcp）"
+echo "[start] 已就绪：http://127.0.0.1:8090（MCP 端点见 MCP_ENDPOINT，默认 http://127.0.0.1:8090/mcp）"

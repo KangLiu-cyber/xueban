@@ -116,6 +116,9 @@ pub async fn require_auth(State(state): State<AppState>, mut req: Request, next:
             {
                 return crate::error::too_many_requests();
             }
+            // 滑动续期：每次鉴权通过刷新活跃时间并顺延过期时间（「频繁使用即
+            // 不退出」）；失败不阻断请求。
+            let _ = state.auth.touch_token(&token).await;
             req.extensions_mut().insert(AuthUser(user));
             next.run(req).await
         }

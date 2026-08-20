@@ -84,6 +84,8 @@ async fn token_lifecycle_revoke_and_purpose_revoke() {
         token: format!("usr_client_{}", stamp()),
         purpose: TokenPurpose::Client,
         revoked_at: None,
+        last_used_at: None,
+        expires_at: None,
     };
     let agent = Token {
         id: 0,
@@ -91,6 +93,8 @@ async fn token_lifecycle_revoke_and_purpose_revoke() {
         token: format!("usr_agent_{}", stamp()),
         purpose: TokenPurpose::Agent,
         revoked_at: None,
+        last_used_at: None,
+        expires_at: None,
     };
     repo.insert(&client).await.expect("插入 client token 失败");
     repo.insert(&agent).await.expect("插入 agent token 失败");
@@ -149,6 +153,8 @@ async fn token_lifecycle_revoke_and_purpose_revoke() {
         token: format!("usr_other_{}", stamp()),
         purpose: TokenPurpose::Agent,
         revoked_at: None,
+        last_used_at: None,
+        expires_at: None,
     };
     repo.insert(&foreign).await.expect("插入他人 token 失败");
     repo.revoke_by_user_purpose(user_id, TokenPurpose::Agent, now)
@@ -188,6 +194,8 @@ async fn token_find_active_by_user_purpose_returns_latest_active_only() {
         token: format!("usr_agent1_{}", stamp()),
         purpose: TokenPurpose::Agent,
         revoked_at: None,
+        last_used_at: None,
+        expires_at: None,
     };
     let agent2 = Token {
         id: 0,
@@ -195,6 +203,8 @@ async fn token_find_active_by_user_purpose_returns_latest_active_only() {
         token: format!("usr_agent2_{}", stamp()),
         purpose: TokenPurpose::Agent,
         revoked_at: None,
+        last_used_at: None,
+        expires_at: None,
     };
     let client = Token {
         id: 0,
@@ -202,6 +212,8 @@ async fn token_find_active_by_user_purpose_returns_latest_active_only() {
         token: format!("usr_client_{}", stamp()),
         purpose: TokenPurpose::Client,
         revoked_at: None,
+        last_used_at: None,
+        expires_at: None,
     };
     repo.insert(&agent1).await.expect("插入失败");
     repo.insert(&agent2).await.expect("插入失败");

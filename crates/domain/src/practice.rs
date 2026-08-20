@@ -14,6 +14,8 @@ pub enum QuestionType {
     Single,
     Multi,
     Judge,
+    /// 视频作答题：上传训练视频 + 训练想法，不判对错，由 AI 复盘。
+    Video,
 }
 
 impl QuestionType {
@@ -22,6 +24,7 @@ impl QuestionType {
             QuestionType::Single => "single",
             QuestionType::Multi => "multi",
             QuestionType::Judge => "judge",
+            QuestionType::Video => "video",
         }
     }
 }
@@ -36,6 +39,8 @@ pub enum Answer {
     Single(usize),
     Multi(BTreeSet<usize>),
     Judge(bool),
+    /// 视频题：无标准答案（序列化为 JSON null），不判分，由 AI 复盘。
+    Video,
 }
 
 /// 用户作答（类型化；REST 入参由 adapter 解析为 Chosen）。

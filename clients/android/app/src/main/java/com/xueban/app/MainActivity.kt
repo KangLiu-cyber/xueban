@@ -17,11 +17,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +52,11 @@ private val tabs = listOf(
 fun XueBanApp() {
     val state = rememberAppState()
 
+    // 无感登录：启动时若有持久化 token，在 IO 线程校验并恢复会话。
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { state.restoreSession() }
+    }
+
     // 登录后首次进入：自动弹出 Agent 接入
     LaunchedEffect(state.freshEnter) {
         if (state.freshEnter) {
@@ -66,10 +74,11 @@ fun XueBanApp() {
 
     // edge-to-edge 下正文整体下移避开状态栏与挖孔；背景先画铺满全屏，再对内容应用 inset padding。
     Box(Modifier.fillMaxSize().background(Xb.bg).statusBarsPadding()) {
-        if (!state.loggedIn) {
-            LoginScreen(state, onEntered = {})
-        } else {
-            Column(Modifier.fillMaxSize()) {
+        when {
+            // 启动无感恢复中：显示加载，避免登录页闪现。
+            state.restoring -> RestoringView()
+            !state.loggedIn -> LoginScreen(state, onEntered = {})
+            else -> Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     TabContent(state)
                 }
@@ -141,5 +150,13 @@ private fun TabContent(state: AppState) {
         2 -> WrongScreen(state)
         3 -> AssemblyScreen(state, onOpenGoal = { state.goalSheet = true })
         else -> MeScreen(state, onOpenGoal = { state.goalSheet = true })
+    }
+}
+
+/** 无感登录恢复中的启动加载视图。 */
+@Composable
+private fun RestoringView() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("正在恢复登录…", color = Xb.muted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }

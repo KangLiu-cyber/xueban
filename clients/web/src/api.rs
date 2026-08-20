@@ -3,7 +3,7 @@
 //!
 //! API 基址解析（`base_url`）：
 //! 1. 构建期环境变量 `XUEBAN_API_BASE`（web/desktop 部署时注入域名地址）；
-//! 2. 浏览器运行期同源兜底 `location.origin + /api/v1`（§11 Caddy 同域反代）；
+//! 2. 浏览器运行期同源兜底 `location.origin + /api/v1`（§11 nginx 同域反代）；
 //! 3. 均不可用时退回本地开发地址。
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -51,6 +51,16 @@ pub struct UserDto {
 pub struct AuthResponse {
     pub token: String,
     pub user: UserDto,
+}
+
+/// GET /auth/me 会话恢复响应：用户 + 最近活跃/过期时间（记录登录时间）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeResponse {
+    pub user: UserDto,
+    #[serde(default)]
+    pub last_used_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -140,6 +150,7 @@ pub enum QuestionType {
     Single,
     Multi,
     Judge,
+    Video,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,6 +429,11 @@ pub async fn logout() -> ApiResult<()> {
     send("POST", "/auth/logout", None, true).await.map(|_| ())
 }
 
+/// 会话恢复：校验本地 token 并拉取最新用户信息与活跃时间（无感登录）。
+pub async fn me() -> ApiResult<MeResponse> {
+    get_json("/auth/me").await
+}
+
 // ---- 空间 ----
 
 pub async fn list_workspaces() -> ApiResult<Vec<Workspace>> {
@@ -438,6 +454,12 @@ pub async fn update_workspace(id: i64, input: &WorkspaceInput) -> ApiResult<Work
         &serde_json::to_string(input).unwrap_or_default(),
     )
     .await
+}
+
+pub async fn delete_workspace(id: i64) -> ApiResult<()> {
+    send("DELETE", &format!("/workspaces/{}", id), None, true)
+        .await
+        .map(|_| ())
 }
 
 pub async fn tree(workspace_id: i64) -> ApiResult<Vec<ItemNode>> {
@@ -560,9 +582,10 @@ pub async fn submit_paper(paper_id: i64, req: &SubmitRequest) -> ApiResult<Paper
 
 // ---- 附件 ----
 
-/// 带鉴权获取附件二进制。`<img>` 标签无法携带 Authorization header，
-/// 笔记图片由视图 fetch → Blob → objectURL 后赋给 src（§8.1 附件读取）。
-pub async fn fetch_attachment(id: i64) -> ApiResult<Vec<u8>> {
+/// 带鉴权获取附件二进制，返回 (mime, bytes)。`<img>`/`<video>` 标签无法
+/// 携带 Authorization header，笔记媒体由视图 fetch → Blob → objectURL 后
+/// 按 mime 决定赋给 img 还是 video（§8.1 附件读取）。
+pub async fn fetch_attachment(id: i64) -> ApiResult<(String, Vec<u8>)> {
     let url = format!("{}/api/v1/attachments/{}", base_url(), id);
     let mut req = Request::get(&url);
     let token = AUTH_TOKEN_OPT.with(|c| c.borrow().clone());
@@ -585,9 +608,85 @@ pub async fn fetch_attachment(id: i64) -> ApiResult<Vec<u8>> {
             .map_err(|e| ApiError::Network(e.to_string()))?;
         return Err(parse_error(&text).await);
     }
-    resp.binary()
+    let mime = resp
+        .headers()
+        .get("content-type")
+        .unwrap_or_else(|| "application/octet-stream".to_owned());
+    let bytes = resp
+        .binary()
         .await
-        .map_err(|e| ApiError::Network(e.to_string()))
+        .map_err(|e| ApiError::Network(e.to_string()))?;
+    Ok((mime, bytes))
+}
+
+/// 上传附件到笔记（raw bytes，Content-Type 白名单 + 魔数嗅探在服务端校验）。
+/// 返回附件 id + 读取 URL（服务端响应的 Attachment 结构）。
+pub async fn upload_attachment(item_id: i64, filename: &str, bytes: Vec<u8>) -> ApiResult<i64> {
+    #[derive(Deserialize)]
+    struct Att {
+        id: i64,
+    }
+    let url = format!(
+        "{}/api/v1/items/{}/attachments?name={}",
+        base_url(),
+        item_id,
+        filename
+    );
+    let mut req = Request::post(&url);
+    req = req.header("Content-Type", "application/octet-stream");
+    let token = AUTH_TOKEN_OPT.with(|c| c.borrow().clone());
+    if let Some(t) = token {
+        req = req.header("Authorization", &format!("Bearer {}", t));
+    }
+    let req = req
+        .body(bytes)
+        .map_err(|e| ApiError::Network(e.to_string()))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| ApiError::Network(e.to_string()))?;
+    let status = resp.status();
+    if !(200..300).contains(&status) {
+        if status == 401 {
+            fire_unauthorized();
+        }
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| ApiError::Network(e.to_string()))?;
+        return Err(parse_error(&text).await);
+    }
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| ApiError::Network(e.to_string()))?;
+    serde_json::from_str::<Att>(&text)
+        .map(|a| a.id)
+        .map_err(|e| ApiError::Network(format!("解析失败：{}", e)))
+}
+
+/// 视频题作答：提交已上传的训练视频附件 id + 训练想法，不判分，落事件待 AI 复盘。
+pub async fn video_answer(question_id: i64, attachment_ids: Vec<i64>, note: Option<String>) -> ApiResult<()> {
+    #[derive(Serialize)]
+    struct Req {
+        question_id: i64,
+        attachment_ids: Vec<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
+    }
+    send(
+        "POST",
+        "/quiz/video-answer",
+        Some(&serde_json::to_string(&Req {
+            question_id,
+            attachment_ids,
+            note,
+        })
+        .unwrap_or_default()),
+        true,
+    )
+    .await
+    .map(|_| ())
 }
 
 // ---- Agent 凭证 ----

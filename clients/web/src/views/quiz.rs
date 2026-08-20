@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::JsFuture;
 
 // P2-8：同一题防重复提交——作答请求在途时忽略该题的下一次点击。
 thread_local! {
@@ -182,6 +184,160 @@ fn submit_multi(state: AppState, idx: usize, q: &QuestionBrief) {
     submit_answer(state, idx, q, Chosen::Multi(set));
 }
 
+/// 视频作答题卡片：上传训练视频（图片/动图/视频）到题源笔记下 + 训练想法，
+/// 提交后不判分、不进错题本，落 video_submit 事件待 AI 复盘。
+#[component]
+fn VideoAnswerCard(state: AppState, q: QuestionBrief) -> impl IntoView {
+    let uploaded: RwSignal<Vec<(String, i64)>> = RwSignal::new(Vec::new());
+    let note: RwSignal<String> = RwSignal::new(String::new());
+    let busy: RwSignal<bool> = RwSignal::new(false);
+    let submitted = move || state.video_submitted.get().contains(&q.id);
+
+    // 选择文件 → 逐文件读取字节 → 上传到题源笔记 → 记 attachment id。
+    let on_files = move |ev: web_sys::Event| {
+        let Some(input) = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
+        else {
+            return;
+        };
+        let Some(files) = input.files() else {
+            return;
+        };
+        let n = files.length();
+        if n == 0 {
+            return;
+        }
+        let st = state;
+        let source_item_id = q.source_item_id;
+        let uploaded = uploaded;
+        let busy = busy;
+        spawn_local(async move {
+            busy.set(true);
+            for i in 0..n {
+                let Some(file) = files.item(i) else { continue };
+                let name = file.name();
+                let bytes = match JsFuture::from(file.array_buffer()).await {
+                    Ok(buf) => js_sys::Uint8Array::new(&buf).to_vec(),
+                    Err(_) => {
+                        st.toast(&format!("读取「{}」失败", name));
+                        continue;
+                    }
+                };
+                match api::upload_attachment(source_item_id, &name, bytes).await {
+                    Ok(id) => uploaded.update(|v| v.push((name, id))),
+                    Err(e) => st.toast(&format!("上传「{}」失败：{}", name, e)),
+                }
+            }
+            busy.set(false);
+        });
+        // 清空 input，允许重复选同一文件。
+        input.set_value("");
+    };
+
+    let remove = move |i: usize| {
+        uploaded.update(|v| {
+            if i < v.len() {
+                v.remove(i);
+            }
+        });
+    };
+
+    let submit = move |_| {
+        if busy.get_untracked() {
+            return;
+        }
+        let list = uploaded.get_untracked();
+        if list.is_empty() {
+            state.toast("请先上传训练视频或图片");
+            return;
+        }
+        let attachment_ids: Vec<i64> = list.iter().map(|(_, id)| *id).collect();
+        let text = note.get_untracked().trim().to_string();
+        let note_opt = if text.is_empty() { None } else { Some(text) };
+        let st = state;
+        spawn_local(async move {
+            match api::video_answer(q.id, attachment_ids, note_opt).await {
+                Ok(()) => {
+                    st.video_submitted.update(|s| {
+                        s.insert(q.id);
+                    });
+                    st.toast("已提交，AI 复盘后会生成复盘笔记");
+                }
+                Err(e) => st.toast(&format!("提交失败：{}", e)),
+            }
+        });
+    };
+
+    let do_next = move |_| {
+        let n = state.quiz_pool.get_untracked().len();
+        if n == 0 {
+            return;
+        }
+        let cur = state.quiz_idx.get_untracked();
+        state.quiz_idx.set(if cur >= n - 1 { 0 } else { cur + 1 });
+    };
+
+    let files_rows = move || {
+        uploaded
+            .get()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (name, _))| {
+                (view! {
+                    <div class="vq-file">
+                        <span class="vq-file-name">{name}</span>
+                        <button class="vq-file-del" on:click=move |_| remove(i)>"✕"</button>
+                    </div>
+                })
+                .into_any()
+            })
+            .collect::<Vec<_>>()
+    };
+
+    view! {
+        <div class="quiz-card">
+            <div class="quiz-tag-row">
+                <span class="quiz-tag type">{type_label(&q)}</span>
+                <span class="quiz-tag subject">"不判对错 · 交给 AI 复盘"</span>
+            </div>
+            <div class="quiz-question">{q.stem.clone()}</div>
+            <div class="vq-upload" class:done=submitted>
+                <Show when=move || !submitted() fallback=|| {
+                    view! { <span class="vq-done-tag">"✓ 已提交 · 等待 AI 复盘"</span> }.into_any()
+                }>
+                    <label class="vq-pick">
+                        "🎬 选择视频 / 图片"
+                        <input type="file" multiple=true accept="video/*,image/*"
+                            style="display:none;"
+                            on:change=on_files />
+                    </label>
+                </Show>
+                <div class="vq-files">{files_rows}</div>
+            </div>
+            <div class="vq-note">
+                <div class="vq-note-label">"训练想法（可选 · 让 AI 更懂你的问题）"</div>
+                <textarea class="vq-textarea"
+                    placeholder="如：发力总用不上腰，重心前冲，想重点看转体…"
+                    prop:value=move || note.get()
+                    on:input=move |ev| note.set(event_target_value(&ev))></textarea>
+            </div>
+            <div class="quiz-footer">
+                <Show when=move || !submitted()>
+                    <button class="btn btn-primary btn-sm"
+                        disabled=move || busy.get()
+                        on:click=submit>
+                        {move || if busy.get() { "提交中…" } else { "提交给 AI 复盘" }}
+                    </button>
+                </Show>
+                <Show when=move || submitted()>
+                    <button class="btn btn-primary btn-sm" on:click=do_next>"下一题 →"</button>
+                </Show>
+            </div>
+        </div>
+    }
+}
+
 #[component]
 pub fn QuizView(state: AppState) -> impl IntoView {
     let scope_open = RwSignal::new(false);
@@ -331,6 +487,11 @@ pub fn QuizView(state: AppState) -> impl IntoView {
         let qid = q.id;
         let subject_empty = subject.is_empty();
         let is_multi = q.qtype == QuestionType::Multi;
+
+        // 视频题：独立作答卡片（上传视频 + 训练想法，不判分，提交待 AI 复盘）。
+        if q.qtype == QuestionType::Video {
+            return view! { <VideoAnswerCard state=state q=q.clone() /> }.into_any();
+        }
 
         let answered = move || {
             state

@@ -88,6 +88,7 @@ async fn app_with_dir() -> Option<(Router, PathBuf)> {
         quiz_records,
         wrong_items.clone(),
         events.clone(),
+        attachment_repo.clone(),
     ));
     let wrong = Arc::new(WrongService::new(wrong_items.clone(), questions.clone()));
     let paper = Arc::new(PaperService::new(

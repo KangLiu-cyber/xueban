@@ -126,7 +126,7 @@ fn cd_chip_text(state: AppState) -> String {
     let d = state.workspace.get().and_then(|w| w.exam_date);
     match d {
         Some(d) => format!("⏳ 距离考试 {} 天", state::exam_days_left(Some(d))),
-        None => "⏳ 距离考试 -- 天".to_string(),
+        None => String::new(),
     }
 }
 
@@ -288,13 +288,15 @@ fn Sidebar(state: AppState, user_menu: RwSignal<bool>) -> impl IntoView {
                 <span class="ws-name">{ws_name}</span>
                 <span class="ws-badge">备考中</span>
             </div>
-            <div class="exam-countdown" on:click=move |_| state.setup_open.set(true)>
-                <div class="cd-num"><span>{cd_days}</span><span class="cd-unit">天</span></div>
-                <div>
-                    <div class="cd-label">距离考试</div>
-                    <div class="cd-date">{cd_date}</div>
+            <Show when=move || state.workspace.get().and_then(|w| w.exam_date).is_some()>
+                <div class="exam-countdown" on:click=move |_| state.setup_open.set(true)>
+                    <div class="cd-num"><span>{cd_days}</span><span class="cd-unit">天</span></div>
+                    <div>
+                        <div class="cd-label">距离考试</div>
+                        <div class="cd-date">{cd_date}</div>
+                    </div>
                 </div>
-            </div>
+            </Show>
         </div>
         <div class="sidebar-nav">
             <div class="nav-section">
@@ -374,7 +376,9 @@ fn Topbar(state: AppState) -> impl IntoView {
                 <div class="topbar-sub">{sub}</div>
             </div>
             <div class="topbar-spacer"></div>
-            <div class="cd-chip">{move || cd_chip_text(state)}</div>
+            <Show when=move || state.workspace.get().and_then(|w| w.exam_date).is_some()>
+                <div class="cd-chip">{move || cd_chip_text(state)}</div>
+            </Show>
             <button class="btn btn-ghost btn-sm" on:click=move |_| { let _ = window().print(); }>
                 "🖨 打印"
             </button>

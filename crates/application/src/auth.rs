@@ -64,8 +64,10 @@ where
         Ok((user, token))
     }
 
-    /// Login：查账号 → 验密码 → 吊销旧 client token → 签发新 token。
+    /// Login：查账号 → 验密码 → 签发新 client token。
     /// 账号不存在与密码错误返回同一错误文案，防账号枚举。
+    /// 不吊销旧 client token：允许同一账号在多个客户端（网页/桌面/安卓）同时
+    /// 保持登录，各设备独立会话、互不踢下线（「无感登录」多设备并存）。
     pub async fn login(&self, account: &str, password: &str) -> Result<Token> {
         let Some(user) = self.users.find_by_account(account).await? else {
             return Err(Error::Invalid("账号或密码错误".to_owned()));
@@ -73,10 +75,6 @@ where
         if !self.hasher.verify(password, &user.password_hash) {
             return Err(Error::Invalid("账号或密码错误".to_owned()));
         }
-        // 同一用户仅保留一个 client token：登录即吊销旧的。
-        self.tokens
-            .revoke_by_user_purpose(user.id, TokenPurpose::Client, Utc::now())
-            .await?;
         self.issue_token(user.id, TokenPurpose::Client).await
     }
 
@@ -107,10 +105,48 @@ where
         if t.purpose != purpose {
             return Err(Error::Invalid("凭证无效".to_owned()));
         }
+        if t.is_expired(Utc::now()) {
+            return Err(Error::Invalid("登录已过期，请重新登录".to_owned()));
+        }
         self.users
             .find_by_id(t.user_id)
             .await?
             .ok_or_else(|| Error::NotFound("用户不存在".to_owned()))
+    }
+
+    /// 会话恢复：校验 client token 并返回用户与凭证（记录登录时间用）。
+    /// 语义同 `authenticate(token, Client)`，额外把 token 一并返回。
+    pub async fn me(&self, token: &str) -> Result<(User, Token)> {
+        let t = self
+            .tokens
+            .find_by_token(token)
+            .await?
+            .ok_or_else(|| Error::NotFound("凭证无效".to_owned()))?;
+        if t.is_revoked() {
+            return Err(Error::Invalid("凭证已吊销".to_owned()));
+        }
+        if t.purpose != TokenPurpose::Client {
+            return Err(Error::Invalid("凭证无效".to_owned()));
+        }
+        if t.is_expired(Utc::now()) {
+            return Err(Error::Invalid("登录已过期，请重新登录".to_owned()));
+        }
+        let user = self
+            .users
+            .find_by_id(t.user_id)
+            .await?
+            .ok_or_else(|| Error::NotFound("用户不存在".to_owned()))?;
+        Ok((user, t))
+    }
+
+    /// 滑动续期：鉴权通过后刷新活跃时间并把过期时间顺延一个 TTL。
+    /// 仅对带过期时间的 client token 生效（仓储按 `expires_at is not null`
+    /// 过滤，agent token 与存量 token 不受影响）；出错不阻断请求。
+    pub async fn touch_token(&self, token: &str) -> Result<()> {
+        let now = Utc::now();
+        self.tokens
+            .touch(token, now, now + domain::identity::CLIENT_TOKEN_TTL)
+            .await
     }
 
     /// 读取现行 Agent 凭证（GET /agent/credential 用，不换发）。
@@ -130,12 +166,21 @@ where
     }
 
     async fn issue_token(&self, user_id: i64, purpose: TokenPurpose) -> Result<Token> {
+        let now = Utc::now();
+        // client token 参与滑动会话：记录活跃时间并设置 30 天有效期；
+        // agent token 永不过期（仅可吊销/换发），last_used_at / expires_at 留空。
+        let (last_used_at, expires_at) = match purpose {
+            TokenPurpose::Client => (Some(now), Some(now + domain::identity::CLIENT_TOKEN_TTL)),
+            TokenPurpose::Agent => (None, None),
+        };
         let token = Token {
             id: 0,
             user_id,
             token: self.issuer.issue(),
             purpose,
             revoked_at: None,
+            last_used_at,
+            expires_at,
         };
         let id = self.tokens.insert(&token).await?;
         let mut token = token;
@@ -201,16 +246,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn login_issues_token_and_revokes_old_client_token() {
+    async fn login_issues_new_token_and_keeps_old_active() {
         let s = svc();
         let (_, first) = s.register("alice", "password1", None).await.unwrap();
         let second = s.login("alice", "password1").await.unwrap();
         assert_ne!(first.token, second.token);
-        // 旧 client token 已吊销，新 token 有效。
+        // 多设备并存：登录不再吊销旧 client token，新旧均可继续使用。
         assert!(
             s.authenticate(&first.token, TokenPurpose::Client)
                 .await
-                .is_err()
+                .is_ok()
         );
         assert!(
             s.authenticate(&second.token, TokenPurpose::Client)
@@ -255,6 +300,21 @@ mod tests {
                 .await,
             Err(Error::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn me_returns_session_and_touch_slides_expiry() {
+        let s = svc();
+        let (_, token) = s.register("alice", "password1", None).await.unwrap();
+        let (user, before) = s.me(&token.token).await.unwrap();
+        assert_eq!(user.id, token.user_id);
+        assert!(before.last_used_at.is_some());
+        assert!(before.expires_at.is_some());
+
+        // 滑动续期后过期时间不早于之前。
+        s.touch_token(&token.token).await.unwrap();
+        let (_, after) = s.me(&token.token).await.unwrap();
+        assert!(after.expires_at.unwrap() >= before.expires_at.unwrap());
     }
 
     #[tokio::test]

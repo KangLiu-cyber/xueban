@@ -102,8 +102,8 @@ start_server
 ok "服务启动（bind=${BIND_ADDR}）"
 # tracing 结构化字段带 ANSI 斜体转义，先剥掉再断言
 LOG_TEXT="$(sed 's/\x1b\[[0-9;]*m//g' "$LOG")"
-if echo "$LOG_TEXT" | grep -q "Skill 目录加载完成" && echo "$LOG_TEXT" | grep -q "count=2"; then
-  ok "内置 Skill 加载（bilibili-video-notes + sports-training）"
+if echo "$LOG_TEXT" | grep -q "Skill 目录加载完成" && echo "$LOG_TEXT" | grep -q "count=3"; then
+  ok "内置 Skill 加载（bilibili-video-notes + sports-video-notes + sports-quiz）"
 else
   bad "Skill 加载异常：$(echo "$LOG_TEXT" | grep -o 'Skill.*' | head -1)"
 fi

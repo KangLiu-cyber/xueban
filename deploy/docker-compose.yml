@@ -1,7 +1,7 @@
-# 单机部署编排（docs/architecture.md §11）：postgres + server 两个服务。
+# 单机部署编排（docs/architecture.md §11）：postgres + server + nginx 三个服务。
 # 镜像不做编译——先跑 scripts/build-musl.sh（二进制）与 trunk build --release（web 产物），
-# 再 build 本编排；skills/ 与前端 web 产物（clients/web/dist）只读挂载进 server，
-# 由服务端静态托管（bootstrap 的 WEB_DIST_DIR 兜底默认即相对路径 clients/web/dist），
+# 再 build 本编排；skills/ 只读挂载进 server，前端 web 产物（clients/web/dist）
+# 只读挂载进 nginx，由 nginx 托管静态文件并反代 /api/v1、/mcp、/healthz 到 server，
 # 宿主直接替换挂载目录内容即更新，无需重建镜像；attachments/ 为可写挂载，
 # 承载笔记图片附件（宿主磁盘 {user_id}/{uuid} 布局，见架构文档 §8.1）。
 # 完整部署包由 scripts/package-server.sh 打 tar.gz，解压后即可直接 docker compose up --build。
@@ -36,14 +36,14 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-xueban}:${POSTGRES_PASSWORD:-xueban-dev-password}@postgres:5432/${POSTGRES_DB:-xueban}
       BIND_ADDR: 0.0.0.0:8080
-      MCP_ENDPOINT: ${MCP_ENDPOINT:-http://127.0.0.1:8080/mcp}
+      MCP_ENDPOINT: ${MCP_ENDPOINT:-http://127.0.0.1:8090/mcp}
       ATTACHMENTS_DIR: /app/attachments
     volumes:
       - ../skills:/app/skills:ro
-      - ../clients/web/dist:/app/clients/web/dist:ro
       - ../attachments:/app/attachments
-    ports:
-      - "8080:8080"
+    # 不再对外暴露端口：仅 nginx 通过 compose 内部网络访问 8080
+    expose:
+      - "8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +53,18 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ../clients/web/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8090:80"
+    depends_on:
+      server:
+        condition: service_healthy
 
 volumes:
   pgdata:
