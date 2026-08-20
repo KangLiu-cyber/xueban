@@ -10,7 +10,7 @@ use leptos::task::spawn_local;
 use wasm_bindgen::prelude::{Closure, JsValue};
 use wasm_bindgen::JsCast;
 
-use crate::api::{self, QuestionType, Workspace, WorkspaceInput};
+use crate::api::{self, Chosen, QuestionType, Workspace, WorkspaceInput};
 use crate::state::{episode_map, fmt_date_ymd, fmt_duration, AppState, ConfirmSpec, View};
 use crate::views::assembly::{
     ask_start_mock, cart_stats, q_source, q_subject, wrong_times, TARGET,
@@ -668,6 +668,28 @@ pub fn Modals(state: AppState) -> impl IntoView {
                                 </div>
                             </div>
                             <div class="result-note">"错题已自动加入错题本，可在「错题本」中重做"</div>
+                        </div>
+                        <div class="modal-body" style="text-align:left;max-height:240px;overflow-y:auto;">
+                            <Show when=move || state.mock_result.get().is_some_and(|r| !r.wrong_questions.is_empty())>
+                                <div style="font-size:12px;color:var(--muted);margin:4px 0 8px;">"错题回顾"</div>
+                                <For each=move || state.mock_result.get().map(|r| r.wrong_questions).unwrap_or_default()
+                                    key=|d| d.question.id
+                                    children=move |d| {
+                                        let q = d.question.clone();
+                                        let correct_text = match &d.correct {
+                                            Chosen::Single(i) => q.options.get(*i).cloned().unwrap_or_else(|| format!("选项 {}", *i + 1)),
+                                            Chosen::Judge(b) => if *b { "正确".to_string() } else { "错误".to_string() },
+                                            Chosen::Multi(s) => s.0.iter().map(|i| q.options.get(*i).cloned().unwrap_or_default()).collect::<Vec<_>>().join("、"),
+                                        };
+                                        (view! {
+                                            <div style="padding:8px 0;border-top:1px solid var(--border-light);">
+                                                <div style="font-size:12.5px;color:var(--ink);line-height:18px;">{d.question.stem.clone()}</div>
+                                                <div style="font-size:11.5px;color:var(--green);margin-top:3px;">{"✓ 正确答案："}{correct_text}</div>
+                                            </div>
+                                        }).into_any()
+                                    }
+                                />
+                            </Show>
                         </div>
                         <div class="modal-foot" style="justify-content:center;">
                             <button class="btn btn-ghost"

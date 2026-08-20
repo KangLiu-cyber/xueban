@@ -636,8 +636,20 @@ async fn quiz_wrong_and_paper_full_loop() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "交卷失败: {result}");
-    assert_eq!(result["correct"], json!(1)); // q0 答对、q1 答错、q2 缺答计错
-    assert_eq!(result["total"], json!(3));
+    assert_eq!(result["result"]["correct"], json!(1)); // q0 答对、q1 答错、q2 缺答计错
+    assert_eq!(result["result"]["total"], json!(3));
+    // 错题明细：2 道（q1 答错 + q2 缺答），缺答题 chosen 为 null。
+    assert_eq!(
+        result["wrong_questions"]
+            .as_array()
+            .expect("应为数组")
+            .len(),
+        2
+    );
+    assert_eq!(
+        result["wrong_questions"][0]["question"]["id"],
+        json!(q_ids[1])
+    );
     let (status, _) = send(
         &app,
         Method::POST,

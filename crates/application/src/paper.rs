@@ -17,7 +17,7 @@ use domain::ports::{
     EventStore, ItemRepository, PaperRepository, QuestionRepository, WorkspaceRepository,
     WrongItemRepository,
 };
-use domain::practice::{Chosen, Paper, PaperConfig, PaperResult, Question};
+use domain::practice::{Answer, Chosen, Paper, PaperConfig, PaperResult, Question, QuestionType};
 use serde::{Deserialize, Serialize};
 
 use crate::quiz::QuestionBrief;
@@ -34,6 +34,23 @@ pub struct PaperAnswer {
 pub struct PaperBundle {
     pub paper: Paper,
     pub questions: Vec<QuestionBrief>,
+}
+
+/// 交卷结果：判分汇总 + 错题明细（题干 / 用户所选 / 正确答案 / 解析）。
+/// 客户端据此展示「得多少分、哪些题错了」，无需再回查题目。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmitOutcome {
+    pub result: PaperResult,
+    pub wrong_questions: Vec<WrongQuestionDetail>,
+}
+
+/// 单道错题明细（含缺答题：chosen 为 None）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WrongQuestionDetail {
+    pub question: QuestionBrief,
+    pub chosen: Option<Chosen>,
+    pub correct: Answer,
+    pub explanation: Option<String>,
 }
 
 pub struct PaperService<W, I, Q, P, B, E>
@@ -118,6 +135,9 @@ where
             .questions
             .draw(workspace_id, user_id, &sources, &qtypes, config.count)
             .await?;
+        // 组卷模考只出「可判分」的题：视频作答题（video）无标准答案、不判分，
+        // 不能进模考卷，抽题后剔除（不足由下方补齐逻辑放宽题型/来源补足）。
+        drawn.retain(|q| q.qtype != QuestionType::Video);
         if (drawn.len() as u32) < config.count {
             // 补齐：放宽题型，仍按来源。
             let extra = self
@@ -132,6 +152,7 @@ where
                 .await?;
             push_unique(&mut drawn, extra);
         }
+        drawn.retain(|q| q.qtype != QuestionType::Video);
         if (drawn.len() as u32) < config.count {
             // 补齐：放宽来源，全空间取题（仍去重）。
             let extra = self
@@ -146,6 +167,7 @@ where
                 .await?;
             push_unique(&mut drawn, extra);
         }
+        drawn.retain(|q| q.qtype != QuestionType::Video);
         let question_ids: Vec<i64> = drawn.iter().map(|q| q.id).collect();
         let paper = Paper {
             id: 0,
@@ -186,14 +208,15 @@ where
     }
 
     /// SubmitPaper：交卷判分。每题 1 分，缺答计错；答错回流错题本，
-    /// 答对题同样落 answer 事件（模考作答全程可审计）。
+    /// 答对题同样落 answer 事件（模考作答全程可审计）。返回判分汇总 +
+    /// 错题明细（题干 / 用户所选 / 正确答案 / 解析）。
     pub async fn submit(
         &self,
         user_id: i64,
         paper_id: i64,
         answers: Vec<PaperAnswer>,
         duration_secs: u32,
-    ) -> Result<PaperResult> {
+    ) -> Result<SubmitOutcome> {
         let mut paper = self.read_paper(user_id, paper_id).await?;
         if paper.result.is_some() {
             return Err(Error::Conflict("试卷已交卷".to_owned()));
@@ -268,9 +291,29 @@ where
             total,
             duration_secs,
         };
+        // 错题明细：按冻结顺序输出（缺答题 chosen 为 None）。
+        let wrong_questions = paper
+            .question_ids
+            .iter()
+            .filter_map(|id| {
+                let q = questions.iter().find(|q| &q.id == id)?;
+                if !wrong_ids.contains(id) {
+                    return None;
+                }
+                Some(WrongQuestionDetail {
+                    question: QuestionBrief::from(q.clone()),
+                    chosen: answered.get(id).map(|c| (*c).clone()),
+                    correct: q.answer.clone(),
+                    explanation: q.explanation.clone(),
+                })
+            })
+            .collect();
         paper.result = Some(result);
         self.papers.submit(&paper).await?;
-        Ok(result)
+        Ok(SubmitOutcome {
+            result,
+            wrong_questions,
+        })
     }
 }
 
@@ -461,6 +504,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn assemble_excludes_video_questions() {
+        let c = ctx().await;
+        // 注入一道视频题（无标准答案），组卷应剔除它，只留可判分的 single 题。
+        c.svc
+            .questions
+            .insert_many(&[Question {
+                id: 0,
+                workspace_id: c.ws_id,
+                source_item_id: c.item_id,
+                qtype: QuestionType::Video,
+                stem: "上传训练视频".into(),
+                options: vec![],
+                answer: Answer::Video,
+                explanation: None,
+                created_at: Utc::now(),
+            }])
+            .await
+            .unwrap();
+        let b = c.svc.assemble(1, c.ws_id, None, config(4)).await.unwrap();
+        assert_eq!(b.paper.question_ids.len(), 3);
+        assert!(
+            b.questions.iter().all(|q| q.qtype != QuestionType::Video),
+            "组卷不得包含视频作答题"
+        );
+    }
+
+    #[tokio::test]
     async fn assemble_rejects_unknown_scope() {
         let c = ctx().await;
         let bad = PaperConfig {
@@ -512,11 +582,23 @@ mod tests {
             // q_ids[2] 缺答 → 计错
         ];
         let r = c.svc.submit(1, p.paper.id, answers, 300).await.unwrap();
-        assert_eq!(r.correct, 1);
-        assert_eq!(r.score, 1);
-        assert_eq!(r.total, 3);
-        assert_eq!(r.duration_secs, 300);
-        assert!((r.accuracy() - 1.0 / 3.0).abs() < 1e-9);
+        assert_eq!(r.result.correct, 1);
+        assert_eq!(r.result.score, 1);
+        assert_eq!(r.result.total, 3);
+        assert_eq!(r.result.duration_secs, 300);
+        assert!((r.result.accuracy() - 1.0 / 3.0).abs() < 1e-9);
+        // 错题明细：2 道（1 道答错 + 1 道缺答）。
+        assert_eq!(r.wrong_questions.len(), 2);
+        let wrong_ids: Vec<i64> = r.wrong_questions.iter().map(|d| d.question.id).collect();
+        assert!(wrong_ids.contains(&c.q_ids[1]));
+        assert!(wrong_ids.contains(&c.q_ids[2]));
+        // 缺答题 chosen 为 None。
+        let skipped = r
+            .wrong_questions
+            .iter()
+            .find(|d| d.question.id == c.q_ids[2])
+            .unwrap();
+        assert!(skipped.chosen.is_none());
         // 错题回流。
         assert!(c.svc.wrongs.find(1, c.q_ids[1]).await.unwrap().is_some());
         assert!(c.svc.wrongs.find(1, c.q_ids[2]).await.unwrap().is_some());

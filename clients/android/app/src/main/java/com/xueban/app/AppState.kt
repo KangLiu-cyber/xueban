@@ -90,6 +90,8 @@ class AppState(context: Context) {
     var mockIdx by mutableStateOf(0)
     var mockSecs by mutableStateOf(150 * 60)
     var mockResult by mutableStateOf<PaperResult?>(null)
+    /** 交卷错题明细（题干 / 用户所选 / 正确答案 / 解析），结果页展示「哪些题错了」。 */
+    var mockWrongQuestions by mutableStateOf<List<WrongQuestionDetail>>(emptyList())
     var mockDots by mutableStateOf(emptyList<Boolean>())
 
     // ---- 我的 ----
@@ -316,6 +318,7 @@ class AppState(context: Context) {
         mockPaper = null
         mockAnswers = emptyMap()
         mockResult = null
+        mockWrongQuestions = emptyList()
         goalSheet = false
         loadTree()
         loadWrong()
@@ -475,9 +478,9 @@ class AppState(context: Context) {
 
     fun currentQuestion(): QuestionBrief? = quizPool.getOrNull(quizIdx)
 
-    /** 选项索引 → wire chosen：single→数字、multi→索引数组、judge→布尔。 */
+    /** 选项索引 → wire chosen：single→数字、multi→索引数组、judge→布尔（0=错误 1=正确）。 */
     fun wireChosen(q: QuestionBrief, idx: Int): JsonElement = when (q.qtype) {
-        QuestionType.Judge -> JsonPrimitive(q.options.getOrElse(idx) { "" } == "正确")
+        QuestionType.Judge -> JsonPrimitive(idx == 1)
         else -> JsonPrimitive(idx)
     }
 
@@ -601,14 +604,21 @@ class AppState(context: Context) {
         val next = !item.wrong.mastered
         // P0-3：后端按 question_id 定位错题，传题目 id 而非 wrong.id
         // P1-9：取消掌握走 unmaster 端点，按钮双向可用
-        guard("操作失败") {
+        val ok = guard("操作失败") {
             if (next) Api.markMastered(item.wrong.questionId)
             else Api.unmarkMastered(item.wrong.questionId)
+        } != null
+        if (!ok) return
+        if (next) {
+            // 掌握后从列表移除（后端 list 只返回未掌握错题，本地同步移除，刷新也不再出现）
+            wrongList = wrongList.filterIndexed { i, _ -> i != index }
+            toast("已标记掌握")
+        } else {
+            val updated = wrongList.toMutableList()
+            updated[index] = item.copy(wrong = item.wrong.copy(mastered = false))
+            wrongList = updated
+            toast("已取消掌握")
         }
-        val updated = wrongList.toMutableList()
-        updated[index] = item.copy(wrong = item.wrong.copy(mastered = next))
-        wrongList = updated
-        toast(if (next) "已标记掌握" else "已取消掌握")
     }
 
     // ==================== 组卷 / 模考 ====================
@@ -705,7 +715,8 @@ class AppState(context: Context) {
                 SubmitRequest(answers = answers, durationSecs = 150 * 60 - mockSecs),
             )
         } ?: return
-        mockResult = result
+        mockResult = result.result
+        mockWrongQuestions = result.wrongQuestions
         loadWrong()
         mockPaper = null
         prefs.edit().remove("mock_paper_id").apply()
@@ -717,7 +728,7 @@ class AppState(context: Context) {
         return when (q.qtype) {
             QuestionType.Multi -> JsonArray(items)
             QuestionType.Judge -> items.firstOrNull()?.let {
-                JsonPrimitive(q.options.getOrElse(it.content.toInt()) { "" } == "正确")
+                JsonPrimitive(it.content.toIntOrNull() == 1)
             } ?: JsonPrimitive(false)
             else -> items.firstOrNull() ?: JsonPrimitive(0)
         }

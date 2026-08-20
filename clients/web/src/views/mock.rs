@@ -213,12 +213,13 @@ pub fn submit_mock(state: AppState) {
         {
             Ok(r) => {
                 st.mock_result.set(Some(MockResult {
-                    score: r.score,
-                    correct: r.correct,
-                    total: r.total,
-                    duration_secs: r.duration_secs,
-                    wrong_count: submitted.saturating_sub(r.correct),
-                    skip_count: r.total.saturating_sub(submitted),
+                    score: r.result.score,
+                    correct: r.result.correct,
+                    total: r.result.total,
+                    duration_secs: r.result.duration_secs,
+                    wrong_count: submitted.saturating_sub(r.result.correct),
+                    skip_count: r.result.total.saturating_sub(submitted),
+                    wrong_questions: r.wrong_questions,
                 }));
                 st.mock.set(None);
                 st.paper_name.set(String::new());

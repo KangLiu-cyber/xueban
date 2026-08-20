@@ -163,7 +163,7 @@ private fun QuizCard(state: AppState, q: QuestionBrief, onOpenGoal: () -> Unit) 
                 color = Xb.ink, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
                 modifier = Modifier.padding(top = 11.dp, bottom = 13.dp),
             )
-            q.options.forEachIndexed { i, opt ->
+            displayOptions(q).forEachIndexed { i, opt ->
                 val key = ('A' + i).toChar()
                 val accent = when {
                     i in corrects -> Xb.green
@@ -468,6 +468,10 @@ internal fun fetchScopeCount(state: AppState, scopeId: Long?): Int = runCatching
     Api.draw(state.workspace?.id ?: return 0, scope = scopeId, count = 100).size
 }.getOrElse { 0 }
 
+/** 判断题选项兜底：后端判断题 options 可能为空，展示固定「错误 / 正确」两项（0=错误 1=正确）。 */
+internal fun displayOptions(q: QuestionBrief): List<String> =
+    if (q.qtype == QuestionType.Judge && q.options.isEmpty()) listOf("错误", "正确") else q.options
+
 /** 由 wire 格式的正确选项推导正确索引集（single→数字、multi→索引数组、judge→布尔）。 */
 internal fun correctIndexSet(q: QuestionBrief, outcome: AnswerOutcome): Set<Int> = when (q.qtype) {
     QuestionType.Multi -> (outcome.answer as? JsonArray)
@@ -475,8 +479,8 @@ internal fun correctIndexSet(q: QuestionBrief, outcome: AnswerOutcome): Set<Int>
         ?.toSet() ?: emptySet()
     QuestionType.Judge -> {
         val isTrue = runCatching { outcome.answer.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull() ?: false
-        val idx = if (isTrue) q.options.indexOf("正确") else q.options.indexOf("错误")
-        if (idx >= 0) setOf(idx) else emptySet()
+        val idx = if (isTrue) 1 else 0
+        setOf(idx)
     }
     else -> setOfNotNull(outcome.answer.jsonPrimitive.intOrNull).filter { it in q.options.indices }.toSet()
 }

@@ -61,17 +61,19 @@ fun WrongScreen(state: AppState) {
                 BoxWithConstraints {
                     val twoCol = maxWidth >= 600.dp
                     val rows = if (twoCol) state.wrongList.chunked(2) else state.wrongList.map { listOf(it) }
-                    rows.forEach { rowItems ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            rowItems.forEach { item ->
-                                Box(Modifier.weight(1f)) {
-                                    WrongCard(state, item, state.wrongList.indexOf(item))
+                    Column {
+                        rows.forEach { rowItems ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                rowItems.forEach { item ->
+                                    Box(Modifier.weight(1f)) {
+                                        WrongCard(state, item, state.wrongList.indexOf(item))
+                                    }
                                 }
+                                if (rowItems.size < 2 && twoCol) Spacer(Modifier.weight(1f))
                             }
-                            if (rowItems.size < 2 && twoCol) Spacer(Modifier.weight(1f))
                         }
                     }
                 }
@@ -193,7 +195,7 @@ private fun RedoCard(state: AppState, item: WrongListItem, onClose: () -> Unit) 
                     color = Xb.ink, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
                     modifier = Modifier.padding(top = 11.dp, bottom = 13.dp),
                 )
-                q.options.forEachIndexed { i, opt ->
+                displayOptions(q).forEachIndexed { i, opt ->
                     val accent = when {
                         i in corrects -> Xb.green
                         q.qtype == QuestionType.Multi && i in multiSel -> Xb.red

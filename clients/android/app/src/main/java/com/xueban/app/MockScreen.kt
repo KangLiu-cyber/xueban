@@ -37,6 +37,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /** 模考页：倒计时 + 答题卡 + 逐题作答，与原型 pageMock 对应。 */
 @Composable
@@ -218,7 +222,7 @@ private fun MockCard(state: AppState, q: QuestionBrief, i: Int, n: Int) {
                 color = Xb.ink, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 26.sp,
                 modifier = Modifier.padding(top = 11.dp, bottom = 13.dp),
             )
-            q.options.forEachIndexed { idx, opt ->
+            displayOptions(q).forEachIndexed { idx, opt ->
                 QOption(
                     key = ('A' + idx).toChar(),
                     text = opt,
@@ -237,6 +241,7 @@ fun ResultSheet(state: AppState, onGoWrong: () -> Unit) {
     val result = state.mockResult ?: return
     val correct = result.correct
     val total = result.total.coerceAtLeast(1)
+    val wrongQs = state.mockWrongQuestions
 
     XbSheet(
         open = true,
@@ -244,7 +249,7 @@ fun ResultSheet(state: AppState, onGoWrong: () -> Unit) {
         title = "模考结果",
         subtitle = null,
     ) {
-        Column(Modifier.padding(horizontal = 18.dp)) {
+        Column(Modifier.padding(horizontal = 18.dp).verticalScroll(rememberScrollState())) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     "${result.score}",
@@ -254,13 +259,13 @@ fun ResultSheet(state: AppState, onGoWrong: () -> Unit) {
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    "/ ${total * 2} 分",
+                    "/ $total 分",
                     color = Xb.mutedLight, fontSize = 15.sp,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
             }
             Text(
-                "正确率 ${correct * 100 / total}% · 用时 ${result.durationSecs / 60} 分钟（演示数据）",
+                "答对 $correct / $total · 正确率 ${correct * 100 / total}%",
                 color = Xb.muted, fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 textAlign = TextAlign.Center,
@@ -268,12 +273,55 @@ fun ResultSheet(state: AppState, onGoWrong: () -> Unit) {
             ResultRow2("答对", "$correct 题", Xb.green, first = true)
             ResultRow2("答错", "${total - correct} 题", Xb.red, first = false)
             ResultRow2("错题处理", "已自动归集到错题本", Xb.muted, first = false)
+
+            if (wrongQs.isNotEmpty()) {
+                Text(
+                    "错题回顾",
+                    color = Xb.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp),
+                )
+                wrongQs.forEach { d ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Xb.surface2)
+                            .border(1.dp, Xb.borderLight, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 11.dp)
+                    ) {
+                        Text(d.question.stem, color = Xb.ink, fontSize = 12.5.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "✓ 正确答案：${answerText(d.question, d.correct)}",
+                            color = Xb.green, fontSize = 11.5.sp,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+
             XbButton("去错题本查看", onClick = {
                 state.resultSheet = false
                 onGoWrong()
             }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
             Spacer(Modifier.height(10.dp))
         }
+    }
+}
+
+/** 正确答案 → 可读文本（single 显示选项内容、judge 显示正确/错误、multi 逗号连接）。 */
+private fun answerText(q: QuestionBrief, correct: JsonElement): String = when (q.qtype) {
+    QuestionType.Judge -> {
+        val isTrue = runCatching { correct.jsonPrimitive.content.toBooleanStrictOrNull() }.getOrNull() ?: false
+        if (isTrue) "正确" else "错误"
+    }
+    QuestionType.Multi -> (correct as? JsonArray)
+        ?.mapNotNull { it.jsonPrimitive.intOrNull }
+        ?.mapNotNull { q.options.getOrNull(it) }
+        ?.joinToString("、") ?: ""
+    else -> {
+        val idx = correct.jsonPrimitive.intOrNull ?: -1
+        q.options.getOrNull(idx) ?: "选项 ${idx + 1}"
     }
 }
 

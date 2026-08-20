@@ -175,7 +175,7 @@ object Api {
 
     fun getPaper(paperId: Long): PaperBundle = get("/papers/$paperId")
 
-    fun submitPaper(paperId: Long, request: SubmitRequest): PaperResult =
+    fun submitPaper(paperId: Long, request: SubmitRequest): SubmitOutcome =
         post("/papers/$paperId/submit", request)
 
     // ---- 附件 ----
@@ -416,6 +416,22 @@ data class PaperResult(
     val correct: Int = 0,
     val total: Int = 0,
     @SerialName("duration_secs") val durationSecs: Int = 0,
+)
+
+/** 交卷结果：判分汇总 + 错题明细。 */
+@Serializable
+data class SubmitOutcome(
+    val result: PaperResult,
+    @SerialName("wrong_questions") val wrongQuestions: List<WrongQuestionDetail> = emptyList(),
+)
+
+/** 单道错题明细（缺答题 chosen 为 null）。 */
+@Serializable
+data class WrongQuestionDetail(
+    val question: QuestionBrief,
+    val chosen: JsonElement? = null,
+    val correct: JsonElement,
+    val explanation: String? = null,
 )
 
 @Serializable

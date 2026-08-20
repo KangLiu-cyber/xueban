@@ -281,6 +281,22 @@ pub struct PaperResult {
     pub duration_secs: u32,
 }
 
+/// 交卷结果：判分汇总 + 错题明细（题干 / 用户所选 / 正确答案 / 解析）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmitOutcome {
+    pub result: PaperResult,
+    pub wrong_questions: Vec<WrongQuestionDetail>,
+}
+
+/// 单道错题明细（缺答题 chosen 为 None）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WrongQuestionDetail {
+    pub question: QuestionBrief,
+    pub chosen: Option<Chosen>,
+    pub correct: Chosen,
+    pub explanation: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CredentialResponse {
     pub token: String,
@@ -572,7 +588,7 @@ pub async fn read_paper(paper_id: i64) -> ApiResult<PaperBundle> {
     get_json(&format!("/papers/{}", paper_id)).await
 }
 
-pub async fn submit_paper(paper_id: i64, req: &SubmitRequest) -> ApiResult<PaperResult> {
+pub async fn submit_paper(paper_id: i64, req: &SubmitRequest) -> ApiResult<SubmitOutcome> {
     post_json(
         &format!("/papers/{}/submit", paper_id),
         &serde_json::to_string(req).unwrap_or_default(),

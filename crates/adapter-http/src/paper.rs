@@ -3,11 +3,11 @@
 //! 组卷数量 1..=200（安全章节上界）；交卷走 `PaperBundle`/`PaperResult`，
 //! chosen 与抽题同线格式。
 
-use application::paper::{PaperAnswer, PaperBundle};
+use application::paper::{PaperAnswer, PaperBundle, SubmitOutcome};
 use axum::Json;
 use axum::extract::{Path, State};
 use domain::error::Error;
-use domain::practice::{PaperConfig, PaperResult};
+use domain::practice::PaperConfig;
 use serde::Deserialize;
 
 use crate::AppState;
@@ -61,7 +61,7 @@ pub async fn submit(
     auth: AuthUser,
     Path(id): Path<i64>,
     JsonBody(body): JsonBody<SubmitRequest>,
-) -> Result<Json<PaperResult>, ApiError> {
+) -> Result<Json<SubmitOutcome>, ApiError> {
     Ok(Json(
         state
             .paper

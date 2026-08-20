@@ -11,7 +11,7 @@ use leptos::prelude::*;
 
 use crate::api::{
     AnswerOutcome, CheckinRecord, Chosen, Item, ItemBundle, ItemKind, ItemNode, QuestionBrief,
-    UserDto, Workspace, WrongListItem, WrongStats,
+    UserDto, Workspace, WrongListItem, WrongQuestionDetail, WrongStats,
 };
 
 pub const LS_TOKEN: &str = "xb_token";
@@ -204,6 +204,8 @@ pub struct MockResult {
     pub duration_secs: u32,
     pub wrong_count: u32,
     pub skip_count: u32,
+    /// 错题明细（题干 / 用户所选 / 正确答案 / 解析），交卷后展示「哪些题错了」。
+    pub wrong_questions: Vec<WrongQuestionDetail>,
 }
 
 #[derive(Clone)]
