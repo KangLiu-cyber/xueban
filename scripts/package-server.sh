@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 服务端部署包：musl 静态二进制 + skills/ + 前端 web 产物 + deploy/ 编排（含 nginx.conf）+ scripts/ 启停脚本，
-# 解压即部署源（scripts/start.sh / scripts/stop.sh），
+# 服务端部署包：musl 静态二进制 + skills/ + 前端 web 产物 + deploy/ 编排（nginx.conf +
+# nginx-systemd.conf + xueban.service + xueban.env.example）+ scripts/ 启停/安装脚本（start.sh /
+# stop.sh / install-systemd.sh），解压即部署源（docker compose 或 systemd 二选一），
 # 文件名含版本号与 commit。CI（.github/workflows）上传为 Release 资产。
 # 前置：scripts/build-musl.sh（二进制）+ clients/web/dist（trunk build --release）。
 set -euo pipefail
