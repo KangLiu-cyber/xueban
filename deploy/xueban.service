@@ -1,0 +1,36 @@
+# 学伴后端服务 systemd 单元（docs/architecture.md §11「systemd 部署」）。
+# 用法：由 scripts/install-systemd.sh 安装到 /etc/systemd/system/xueban.service，
+#       并生成 /etc/xueban/xueban.env（见 deploy/xueban.env.example）。
+# 运行身份：专用非 root 用户 xueban；二进制 /usr/local/bin/xueban 为 musl 静态二进制。
+# 依赖：本机已装 PostgreSQL（默认监听 127.0.0.1:5432），DATABASE_URL 指向它。
+
+[Unit]
+Description=学伴（xueban）后端服务：REST API + MCP 网关
+Documentation=https://github.com/KangLiu-cyber/xueban
+# 网络与数据库就绪后再启动（postgresql.service 为系统包名，若为其他数据库编排请调整）
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xueban
+Group=xueban
+# 环境变量（DATABASE_URL / BIND_ADDR / MCP_ENDPOINT / SKILLS_DIR / ATTACHMENTS_DIR）
+EnvironmentFile=/etc/xueban/xueban.env
+# 二进制只读 + 配置只读 + 附件可写，全部经绝对路径注入；无需 WorkingDirectory
+ExecStart=/usr/local/bin/xueban
+Restart=on-failure
+RestartSec=3s
+# 安全加固：私有 /tmp、禁止提权与家目录访问；附件目录由 ATTACHMENTS_DIR 显式指定
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+# 附件写目录（install-systemd.sh 预创建，属主 xueban:xueban）
+ReadWritePaths=/var/lib/xueban/attachments
+# 日志上限，防止长期运行日志膨胀
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

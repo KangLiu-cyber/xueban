@@ -199,7 +199,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 ├── migrations/                  # SQL 迁移脚本
 ├── skills/                      # 内置 Skill 目录（一个子文件夹一个 skill，内含 skill.md）
 ├── scripts/                     # 工程脚本：门禁 / cross 交叉编译 / 安装包打包
-├── deploy/                      # 部署资产：server Dockerfile（仅 COPY musl 二进制）+ compose + nginx.conf
+├── deploy/                      # 部署资产：server Dockerfile（仅 COPY musl 二进制）+ compose + nginx.conf + systemd 单元/env
 ├── .github/workflows/           # CI：cross 编译 musl + trunk 编译 web + 安卓/桌面包 + 自动 Release
 └── docs/                        # 架构 / 需求文档与 UI 原型
 ```
@@ -524,7 +524,32 @@ Agent 生成（原始数据）                使用过程（派生数据）
 - **数据库迁移内置**：sqlx::migrate! 编译期嵌入迁移脚本，server 启动时自动执行，镜像无需挂载 migrations/。
 - TLS 与域名反代不在 compose 内（由部署侧网关 / 平台另行处理）；数据库备份（每日 pg_dump → 对象存储）由部署侧 cron 或托管服务承担，不再内置 sidecar。
 - 服务端无推理负载，2C4G 可支撑数千日活；瓶颈出现时优先升配。
-- 演进路径：单进程 → 读写分离（Postgres 只读副本）→ 按限界上下文拆服务（六边形边界即拆分线，仅当团队与流量同时增长时）。
+- **演进路径**：单进程 → 读写分离（Postgres 只读副本）→ 按限界上下文拆服务（六边形边界即拆分线，仅当团队与流量同时增长时）。
+
+### systemd 部署（无 Docker）
+
+对不愿引入 Docker 的宿主，提供 systemd 直跑方案：musl 二进制由 systemd 托管，nginx 反代前端与 API/MCP。与上面的 docker compose 方案二选一，两者共享同一二进制与前端产物。
+
+```
+┌────────────────────────────────────────────┐
+│  单台云服务器（无 Docker）                      │
+│  ┌──────────────┐  /api /mcp   ┌──────────────┐
+│  │ nginx（/var/www │──────────▶│ xueban 服务     │
+│  │  /xueban 静态前端）│ 反向代理    │ （systemd 托管） │
+│  └──────────────┘             └──────┬───────┘
+│                                      │ SQL       │
+│                            ┌─────────▼───────┐  │
+│                            │ PostgreSQL（系统   │  │
+│                            │  包/宿主直装）     │  │
+│                            └─────────────────┘  │
+└────────────────────────────────────────────┘
+```
+
+- **安装**：`sudo scripts/install-systemd.sh`（或 `sudo make install-systemd`），脚本缺产物自动补齐（musl 二进制 + 前端产物）。安装为 `/usr/local/bin/xueban` 二进制、`/etc/xueban/skills`（只读 skill 目录）、`/var/lib/xueban/attachments`（附件可写目录，属主 xueban）、`/etc/xueban/xueban.env`（环境变量，chmod 600）、`/etc/systemd/system/xueban.service`（systemd 单元）。检测到 nginx 时一并安装 `/var/www/xueban`（前端产物）与 `/etc/nginx/conf.d/xueban.conf`（反代配置）。
+- **专用运行用户**：非 root 用户 `xueban`（`systemd` 单元 `User=`/`Group=`），安全加固 `NoNewPrivileges` + `PrivateTmp` + `ProtectHome` + `ProtectSystem=full`，仅放行附件目录 `ReadWritePaths=/var/lib/xueban/attachments`。
+- **环境变量**：`/etc/xueban/xueban.env`（模板见 `deploy/xueban.env.example`）承载 `DATABASE_URL`（指向宿主 PostgreSQL）、`BIND_ADDR=127.0.0.1:8080`（只对内，nginx 反代）、`MCP_ENDPOINT`、`SKILLS_DIR`、`ATTACHMENTS_DIR`。改 env 后 `systemctl restart xueban` 生效。
+- **运行管理**：`systemctl status xueban` / `journalctl -u xueban -f` 查看状态与日志；`systemctl restart xueban` 重启；`systemctl disable --now xueban` 卸载。
+- **与 docker 方案的差异**：systemd 方案不编排 PostgreSQL（宿主自备数据库），nginx 反代目标为 `127.0.0.1:8080`（`deploy/nginx-systemd.conf`）而非 docker 服务名；其余（静态托管、SSE 反代、附件布局）一致。
 
 ## 十二、非功能设计
 

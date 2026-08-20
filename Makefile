@@ -7,6 +7,7 @@
 #   make build-musl  复现 CI：cross 交叉编译 musl 静态二进制
 #   make package     复现 CI：打服务端安装包（tar.gz）
 #   make start/stop  一键启动/停止部署（docker compose，见 scripts/start.sh）
+#   make install-systemd  安装为 systemd 服务（宿主直跑二进制，见 scripts/install-systemd.sh）
 #   make e2e         企业场景端到端冒烟（真实服务 + 真实 PG，见 scripts/e2e.sh）
 
 SHELL := /bin/bash
@@ -14,7 +15,7 @@ SHELL := /bin/bash
 DATABASE_URL ?= postgres://postgres@localhost/xueban?host=/tmp
 BIND_ADDR ?= 127.0.0.1:8080
 
-.PHONY: dev run web desktop gate check build-musl package start stop e2e
+.PHONY: dev run web desktop gate check build-musl package start stop install-systemd e2e
 
 ## 本地一键启动后端（连接串 / 监听地址可用环境变量覆盖）
 dev run:
@@ -56,6 +57,10 @@ start:
 
 stop:
 	scripts/stop.sh
+
+## 安装为 systemd 服务（宿主直跑 musl 二进制 + nginx 反代；需 root，见 scripts/install-systemd.sh）
+install-systemd:
+	scripts/install-systemd.sh
 
 ## 企业场景端到端冒烟：真实服务进程 + 真实 PostgreSQL + 真实 HTTP，
 ## 覆盖体育学习闭环、鉴权、隔离、事件流与重启持久化（见 scripts/e2e.sh）

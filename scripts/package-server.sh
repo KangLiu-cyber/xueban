@@ -37,4 +37,5 @@ mkdir -p dist
 tar -C "$tmp" -czf "dist/$name.tar.gz" "$name"
 
 echo "[package-server] 部署包：dist/$name.tar.gz"
-echo "[package-server] 部署：解压后 scripts/start.sh（停止 scripts/stop.sh）"
+echo "[package-server] 部署：解压后 scripts/start.sh（docker compose，停止 scripts/stop.sh）"
+echo "[package-server]       或 sudo scripts/install-systemd.sh（systemd 宿主直跑）"
