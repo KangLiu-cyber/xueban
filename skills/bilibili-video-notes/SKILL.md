@@ -1,6 +1,6 @@
 ---
 name: "bilibili-video-notes"
-description: "Extracts study notes from Bilibili course videos by transcribing the teacher's audio (Vosk) and reading PPT slides from scene-detected keyframes, then fills a clean HTML note template. Invoke when the user provides a bilibili.com video link and asks for notes/笔记/重点, or says to use the video-note skill."
+description: "Extracts study notes from Bilibili course/lecture videos (knowledge-based courses such as soft exam/计算机/软件架构, NOT sports-movement tutorials) by transcribing the teacher's audio (Vosk) and reading PPT slides from scene-detected keyframes, then fills a clean HTML note template. Invoke when the user provides a bilibili.com video link for a knowledge course and asks for notes/笔记/重点, or says to use the video-note skill. For sports movement teaching videos (badminton/core training), use sports-video-notes instead."
 ---
 
 # Bilibili 视频笔记提取

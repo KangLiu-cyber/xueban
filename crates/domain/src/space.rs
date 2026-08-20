@@ -10,7 +10,7 @@ pub struct Workspace {
     pub id: i64,
     pub user_id: i64,
     pub name: String,
-    /// 手写考试目标（自由文本，不做枚举）。
+    /// 手写学习目标（自由文本，不做枚举）：备考为考试目标，体育为训练目标。
     pub exam_goal: String,
     pub exam_date: Option<NaiveDate>,
     pub created_at: DateTime<Utc>,

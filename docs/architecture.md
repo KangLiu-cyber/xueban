@@ -125,7 +125,7 @@ v1.1 变更：后端改为六边形架构（端口与适配器）+ DDD，新增�
 | 端口 | 说明 | Postgres 适配器实现要点 |
 |:---|:---|:---|
 | UserRepository / TokenRepository | 账号与凭证存取 | argon2 哈希、token 唯一索引 |
-| WorkspaceRepository | 空间与考试目标 | exam_goal 手写文本 |
+| WorkspaceRepository | 空间与学习目标 | exam_goal 手写文本（备考为考试目标，体育为训练目标） |
 | ItemRepository | 内容树读写 | parent_id 递归查询（WITH RECURSIVE） |
 | AnnotationRepository | 批注存取 | author 区分 ai/user |
 | QuestionRepository | 题库读写 | 按 workspace + source_item 查询 |
@@ -417,8 +417,8 @@ MCP tool handler 与 REST handler 一样只做协议翻译，复用同一组用�
 
 | 工具 | 对应用例 |
 |:---|:---|
-| `bootstrap` | AgentBootstrap（返回备考提示词、工具清单、Skill 目录全量内容 `skills`（含脚本）；Skill 目录 = 内置 + 用户自定义合并，同名用户自定义覆盖内置） |
-| `create_workspace` | ManageExamGoal（创建） |
+| `bootstrap` | AgentBootstrap（返回提示词、工具清单、Skill 目录全量内容 `skills`（含脚本）；Skill 目录 = 内置 + 用户自定义合并，同名用户自定义覆盖内置） |
+| `create_workspace` | ManageExamGoal（创建学习空间） |
 | `create_item` / `write_item` | BrowseTree / ReadNote 的写入侧（Agent 内容写入） |
 | `read_item` / `list_items` | BrowseTree / ReadNote |
 | `add_annotation` | Annotate（author = ai） |

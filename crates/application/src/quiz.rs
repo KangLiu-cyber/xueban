@@ -108,7 +108,7 @@ where
         self.workspaces
             .find_by_id_and_user(workspace_id, user_id)
             .await?
-            .ok_or_else(|| Error::NotFound("备考空间不存在".to_owned()))?;
+            .ok_or_else(|| Error::NotFound("学习空间不存在".to_owned()))?;
         if let Some(scope) = scope {
             self.items
                 .find_by_id(scope, user_id)

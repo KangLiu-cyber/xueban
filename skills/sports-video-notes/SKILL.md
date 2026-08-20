@@ -1,6 +1,6 @@
 ---
 name: "sports-video-notes"
-description: "Turns sports teaching videos into movement-essence notes where every knowledge point is paired with a screenshot, gif/webp animation, or mp4/webm clip, then uploads notes+media to the note platform via MCP. Invoke when the user gives a sports video link (badminton/core training) and asks for 动作要领/笔记/场景知识点."
+description: "Turns sports movement-teaching videos into movement-essence notes where every knowledge point is paired with a screenshot, gif/webp animation, or mp4/webm clip, then uploads notes+media to the note platform via MCP. Invoke when the user gives a sports movement-teaching video link (badminton/core training) and asks for 动作要领/笔记/场景知识点. For knowledge course videos (soft exam/软件架构等), use bilibili-video-notes instead."
 ---
 
 # 体育教学视频 → 动作要领笔记（每个知识点配图/动图/视频）

@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_QUESTIONS_PER_BATCH: usize = 200;
 
 /// 能力包版本：服务端升级能力后递增，Agent 下次接入自动获取新版本。
-pub const CAPABILITY_VERSION: u32 = 2;
+pub const CAPABILITY_VERSION: u32 = 3;
 
 /// Agent 提交的题目入参（无 id/归属字段，归属由上下文与调用参数给定）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,7 +37,7 @@ pub struct QuestionInput {
     pub explanation: Option<String>,
 }
 
-/// AgentBootstrap 返回值：Skill 定义、备考提示词、工具清单、合并 Skill 目录。
+/// AgentBootstrap 返回值：Skill 定义、提示词、工具清单、合并 Skill 目录。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentCapability {
     pub assistant: String,
@@ -118,7 +118,7 @@ where
         }
     }
 
-    /// AgentBootstrap：能力下发。提示词基于用户首个空间的考试目标定制；
+    /// AgentBootstrap：能力下发。提示词基于用户首个空间的学习目标定制；
     /// 尚无空间时给出引导文案，能力本身始终可用。合并 Skill 目录全量下发
     /// （含脚本）：系统内置 + 用户自定义（同名用户自定义覆盖内置），
     /// Agent 首次接入即自动下载安装。
@@ -132,11 +132,14 @@ where
             .map(|w| w.exam_goal);
         let prompt = match goal {
             Some(goal) if !goal.trim().is_empty() => format!(
-                "你是学伴备考助手，为用户的备考空间生成学习内容。\n用户考试目标：{goal}\n\
-                 请先 bootstrap 获取能力包（含 Skill 目录），把 skills 全部安装后，\
+                "你是学伴学习助手，为用户的「学习空间」生成内容。系统同时支持备考类与体育训练类场景：\
+                 空间名与学习目标由用户填写（如「软考 · 系统架构设计师」或「正手高远球」）。\n\
+                 用户当前学习目标：{goal}\n\
+                 请先调用 bootstrap 获取能力包（含 Skill 目录），把 skills 全部安装后，\
+                 依据用户目标与指令从已安装 skill 中挑选匹配者执行（skill 的 description 说明各自适用场景），\
                  再按用户指令生成目录、笔记与习题。"
             ),
-            _ => "你是学伴备考助手。用户尚未设置考试目标：请先引导创建备考空间 \
+            _ => "你是学伴学习助手。用户尚未设置学习目标：请先引导创建学习空间 \
                   （create_workspace），再按指令生成内容。"
                 .to_owned(),
         };
@@ -248,7 +251,7 @@ where
         self.workspaces
             .find_by_id_and_user(workspace_id, user_id)
             .await?
-            .ok_or_else(|| Error::NotFound("备考空间不存在".to_owned()))?;
+            .ok_or_else(|| Error::NotFound("学习空间不存在".to_owned()))?;
         let item = self
             .items
             .find_by_id(source_item_id, user_id)

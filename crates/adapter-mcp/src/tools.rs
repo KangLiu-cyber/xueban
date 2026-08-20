@@ -68,14 +68,14 @@ fn map_err(e: Error) -> ErrorData {
 
 #[tool_router]
 impl McpService {
-    /// AgentBootstrap：能力包下发（Skill + 备考提示词 + 工具清单 + Skill
+    /// AgentBootstrap：能力包下发（Skill + 提示词 + 工具清单 + Skill
     /// 目录全量内容 + 版本号）。内置与用户自定义合并（同名用户覆盖内置）
     /// 全量下发（含脚本），Agent 首次接入即自动下载安装；之后可按名经
     /// get_skill 重新拉取。
     #[tool(
         name = "bootstrap",
         title = "能力下发",
-        description = "获取 Agent 能力包：Skill、备考提示词、工具清单、Skill 目录（内置与用户自定义合并，全量含脚本）与版本号。连接后先调用本工具。"
+        description = "获取 Agent 能力包：Skill、提示词、工具清单、Skill 目录（内置与用户自定义合并，全量含脚本）与版本号。连接后先调用本工具。"
     )]
     async fn bootstrap(
         &self,
@@ -91,11 +91,11 @@ impl McpService {
             .map_err(map_err)
     }
 
-    /// ManageExamGoal（Agent 入口）：创建备考空间。
+    /// ManageGoal（Agent 入口）：创建学习空间。
     #[tool(
         name = "create_workspace",
-        title = "创建备考空间",
-        description = "创建用户的备考空间，需提供名称与考试目标（日期可选）。"
+        title = "创建学习空间",
+        description = "创建用户的学习空间，需提供名称与学习目标（备考目标或训练目标，日期可选）。"
     )]
     async fn create_workspace(
         &self,
@@ -394,12 +394,14 @@ impl ServerHandler for McpService {
                 title: Some("学伴 MCP 网关".to_owned()),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 description: Some(
-                    "学伴备考助手的 MCP 接入网关：目录生成、笔记写作、习题保存。".to_owned(),
+                    "学伴学习助手的 MCP 接入网关：目录生成、笔记写作、习题保存、训练复盘。"
+                        .to_owned(),
                 ),
                 ..Default::default()
             },
             instructions: Some(
-                "你是学伴备考助手。先调用 bootstrap 获取能力包，再按用户指令生成内容；\
+                "你是学伴学习助手，同时支持备考类与体育训练类场景。先调用 bootstrap 获取能力包，\
+                 依据用户目标与指令从已安装 skill 中挑选匹配者执行；\
                  所有工具都会校验用户身份与归属，无需在参数中携带用户信息。"
                     .to_owned(),
             ),

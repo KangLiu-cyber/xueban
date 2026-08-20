@@ -81,7 +81,7 @@ where
             .workspaces
             .find_by_id_and_user(id, user_id)
             .await?
-            .ok_or_else(|| Error::NotFound("备考空间不存在".to_owned()))?;
+            .ok_or_else(|| Error::NotFound("学习空间不存在".to_owned()))?;
         ws.set_goal(name, exam_goal, exam_date);
         self.workspaces.update(&ws).await?;
         Ok(ws)
@@ -99,7 +99,7 @@ where
         if hit {
             Ok(())
         } else {
-            Err(Error::NotFound("备考空间不存在".to_owned()))
+            Err(Error::NotFound("学习空间不存在".to_owned()))
         }
     }
 
@@ -108,7 +108,7 @@ where
         self.workspaces
             .find_by_id_and_user(id, user_id)
             .await?
-            .ok_or_else(|| Error::NotFound("备考空间不存在".to_owned()))
+            .ok_or_else(|| Error::NotFound("学习空间不存在".to_owned()))
     }
 
     /// BrowseTree：完整内容树。
