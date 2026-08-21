@@ -67,8 +67,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: 构建 APK（debug 可安装验证，端点指向生产域名）
-        run: ./gradlew :app:assembleDebug -PapiBaseUrl=https://buildstore.mjcode.top/api/v1 -q
+      - name: 构建 APK（debug 可安装验证，端点指向公网 IP）
+        run: ./gradlew :app:assembleDebug -PapiBaseUrl=http://124.71.161.169:42642/api/v1 -q
       - name: 上传 APK（path 相对仓库根解析，working-directory 只作用于 run 步骤）
         uses: actions/upload-artifact@v4
         with:
@@ -91,10 +91,10 @@ jobs:
         run: cargo install trunk --locked
       - name: 安装 tauri CLI（crate 名 tauri-cli，安装的 binary 是 cargo-tauri）
         run: cargo install tauri-cli --locked
-      - name: 编译桌面端安装包（tauri 自动先 trunk build 前端，tauri build 默认即 release，端点指向生产域名）
+      - name: 编译桌面端安装包（tauri 自动先 trunk build 前端，tauri build 默认即 release，端点指向公网 IP）
         run: |
           rustup target add wasm32-unknown-unknown
-          cd clients/desktop && XUEBAN_API_BASE=https://buildstore.mjcode.top/api/v1 cargo tauri build
+          cd clients/desktop && XUEBAN_API_BASE=http://124.71.161.169:42642/api/v1 cargo tauri build
       - name: 重命名安装包为 ASCII 文件名（GitHub 对非 ASCII 文件名会剥掉前缀，统一 xueban_ 前缀）
         run: |
           cd clients/target/release/bundle
