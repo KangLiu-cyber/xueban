@@ -463,9 +463,9 @@ private fun PickItem(title: String, selected: Boolean, count: String, onClick: (
     }
 }
 
-/** 静默统计某范围题数（失败按 0，不弹 toast）。 */
+/** 静默统计某范围题数（count=0 返回全部以准确计数；失败按 0，不弹 toast）。 */
 internal fun fetchScopeCount(state: AppState, scopeId: Long?): Int = runCatching {
-    Api.draw(state.workspace?.id ?: return 0, scope = scopeId, count = 100).size
+    Api.draw(state.workspace?.id ?: return 0, scope = scopeId, count = 0).size
 }.getOrElse { 0 }
 
 /** 判断题选项兜底：后端判断题 options 可能为空，展示固定「错误 / 正确」两项（0=错误 1=正确）。 */

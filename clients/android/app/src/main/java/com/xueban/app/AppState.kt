@@ -447,7 +447,7 @@ class AppState(context: Context) {
         quizScope = scopeName
         quizScopeId = scopeId
         val pool = guard("加载题目失败") {
-            Api.draw(ws.id, scope = scopeId, count = 10)
+            Api.draw(ws.id, scope = scopeId, count = 0)
         }
         if (pool != null) {
             quizPool = pool

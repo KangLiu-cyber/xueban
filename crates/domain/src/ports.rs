@@ -149,7 +149,8 @@ pub trait QuestionRepository {
     async fn insert_many(&self, questions: &[Question]) -> Result<Vec<i64>>;
     /// 按 id + 归属取题（判分/组卷回填用）。
     async fn find_by_ids(&self, ids: &[i64], user_id: i64) -> Result<Vec<Question>>;
-    /// 按范围抽题：workspace 内按来源节点/题型筛选，返回最多 count 题。
+    /// 按范围抽题：workspace 内按来源节点/题型筛选，返回最多 count 题；
+    /// count 为 0 表示不截断、返回范围内全部题目。
     /// 携带归属：workspace 属于 user（SQL 层 join 限定），作为隔离第二道防线。
     async fn draw(
         &self,

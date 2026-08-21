@@ -224,7 +224,7 @@ async fn load_episode(state: AppState, quiz_count: RwSignal<u32>, c: usize, e: u
         match api::draw(&DrawQuery {
             workspace_id: ws.id,
             scope: Some(ep.node_id),
-            count: Some(100),
+            count: None,
         })
         .await
         {

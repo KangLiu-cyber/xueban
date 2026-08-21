@@ -39,7 +39,7 @@ async fn load_scope(state: AppState, scope: QuizScope) {
                 match api::draw(&DrawQuery {
                     workspace_id: ws.id,
                     scope: None,
-                    count: Some(100),
+                    count: None,
                 })
                 .await
                 {
@@ -62,7 +62,7 @@ async fn load_scope(state: AppState, scope: QuizScope) {
                 Some(id) => match api::draw(&DrawQuery {
                     workspace_id: ws.id,
                     scope: Some(id),
-                    count: Some(100),
+                    count: None,
                 })
                 .await
                 {
@@ -376,7 +376,7 @@ pub fn QuizView(state: AppState) -> impl IntoView {
                     let qs = match api::draw(&DrawQuery {
                         workspace_id: ws.id,
                         scope: Some(ep.node_id),
-                        count: Some(100),
+                        count: None,
                     })
                     .await
                     {

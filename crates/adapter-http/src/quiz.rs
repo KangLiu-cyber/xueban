@@ -29,10 +29,11 @@ pub async fn draw(
     auth: AuthUser,
     Query(q): Query<DrawQuery>,
 ) -> Result<Json<Vec<QuestionBrief>>, ApiError> {
-    let count = q.count.unwrap_or(10);
-    if count == 0 || count > 100 {
+    // count 缺省或为 0 表示返回范围内全部题目；1..=100 表示最多返回 N 题。
+    let count = q.count.unwrap_or(0);
+    if count > 100 {
         return Err(ApiError::from(Error::Invalid(
-            "count 需在 1..=100 之间".to_owned(),
+            "count 需在 0..=100 之间".to_owned(),
         )));
     }
     Ok(Json(

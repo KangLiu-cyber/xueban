@@ -87,7 +87,7 @@ pub(crate) async fn init_data(state: AppState) {
     match api::draw(&DrawQuery {
         workspace_id: w.id,
         scope: None,
-        count: Some(100),
+        count: None,
     })
     .await
     {

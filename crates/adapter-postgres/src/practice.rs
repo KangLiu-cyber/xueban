@@ -120,8 +120,12 @@ impl QuestionRepository for PgQuestionRepository {
             qb.push_bind(types);
             qb.push(")");
         }
-        qb.push(" order by id limit ");
-        qb.push_bind(count as i64);
+        // count 为 0 表示返回全部，不追加 limit 子句。
+        qb.push(" order by id");
+        if count > 0 {
+            qb.push(" limit ");
+            qb.push_bind(count as i64);
+        }
         let rows = qb
             .build()
             .fetch_all(&self.pool)

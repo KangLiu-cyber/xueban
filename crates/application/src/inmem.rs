@@ -486,7 +486,10 @@ impl QuestionRepository for InMemoryQuestionRepository {
             .cloned()
             .collect();
         out.sort_by_key(|q| q.id);
-        out.truncate(count as usize);
+        // count 为 0 表示返回全部，不截断。
+        if count > 0 {
+            out.truncate(count as usize);
+        }
         Ok(out)
     }
 }
