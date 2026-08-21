@@ -132,17 +132,17 @@ private fun AsmScopeCard(state: AppState) {
     AsmCard {
         AsmSection("范围") {
             val eps = allEps(deriveCourses(state.tree))
-            ChipRow(listOf("全部集数") + eps.map { "第${it.second.no}集" }, state.asmScope) { label ->
-                if (label == "全部集数") {
+            // 标签带课程名，区分不同课程下的同号集（如「软考 · 第1集」），
+            // 避免多课程时「第1集」重复，且点击按 no 匹配会错选第一个同号集。
+            val labels = listOf("全部集数") + eps.map { "${it.first.name} · 第${it.second.no}集" }
+            ChipRow(labels, state.asmScope) { label ->
+                val ep = eps.firstOrNull { "${it.first.name} · 第${it.second.no}集" == label }?.second
+                if (ep == null) {
                     state.asmScope = "全部集数"
                     state.asmScopeId = null
                 } else {
-                    val no = label.removePrefix("第").removeSuffix("集").toIntOrNull()
-                    val ep = eps.firstOrNull { it.second.no == no }?.second
-                    if (ep != null) {
-                        state.asmScope = "第${ep.no}集"
-                        state.asmScopeId = ep.nodeId
-                    }
+                    state.asmScope = label
+                    state.asmScopeId = ep.nodeId
                 }
             }
         }
